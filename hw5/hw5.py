@@ -13,13 +13,29 @@ class Constraints(Enum):
 
 
 def GetCross(v):
-    if v.shape != (3, 1):
+    """
+    Computes the n by n cross product matrix ṽ for a given vector of dimensions n. Expects a column vector but will
+    noisily transpose a row vector
+
+    ṽ satisfies ṽa = v x a - where x is the cross-product operator
+    """
+    if v.shape == (1, 3):
+        print('Warning: Input to GetCross was a row vector, automatically transposed it')
+        v = v.T
+    elif v.shape != (3, 1):
         raise ValueError('Input vector v was not a column vector')
     return np.array([[0, -v[2, 0], v[1, 0]], [v[2, 0], 0, -v[0, 0]], [-v[1, 0], v[0, 0], 0]])
 
 
 def GetAMatrix(p):
-    if p.shape != (4, 1):
+    """
+    Computes a rotation matrix (A) from a given orientation vector (unit quaternion) p. Expects a column vector but will
+    noisily transpose a row vector
+    """
+    if p.shape == (1, 4):
+        print('Warning: Input to GetAMatrix was a row vector, automatically transposed it')
+        p = p.T
+    elif p.shape != (4, 1):
         raise ValueError('Input vector p was not in R^4')
 
     e = p[1:, ...]
@@ -30,9 +46,21 @@ def GetAMatrix(p):
 
 
 def GetBMatrix(p, a):
-    if p.shape != (4, 1):
+    """
+    Computes the B matrix from a given orientation vector (unit quaternion) and position vector. Expects column vectors
+    but will noisily transpose row vectors.
+
+    TODO: Write down what B actually means...
+    """
+    if p.shape == (1, 4):
+        print('Warning: Input to GetBMatrix was a row vector, automatically transposed it')
+        p = p.T
+    elif p.shape != (4, 1):
         raise ValueError('Input vector p was not in R^4')
-    if a.shape != (3, 1):
+    if a.shape == (1, 3):
+        print('Warning: Input to GetBMatrix was a row vector, automatically transposed it')
+        a = a.T
+    elif a.shape != (3, 1):
         raise ValueError('Input vector a was not in R^3')
 
     e = p[1:, ...]
@@ -197,8 +225,8 @@ class DP1:
 
     def GetPhiR(self):
         if self.body_i.is_ground or self.body_j.is_ground:
-            return [[0, 0, 0]]
-        return [[0, 0, 0, 0, 0, 0]]
+            return np.zeros((1, 3))
+        return np.zeros((1, 6))
 
     def GetPhiP(self):
         Ai = GetAMatrix(self.body_i.p)
@@ -219,7 +247,7 @@ class DP1:
         return np.concatenate((term_i.T, term_j), axis=1)
 
 
-(dp1, cd) = ReadModelFile('hw5.mdl')
+(dp1, cd) = ReadModelFile('hw5/hw5.mdl')
 
 print(dp1.GetPhi())
 print(dp1.GetNu())
