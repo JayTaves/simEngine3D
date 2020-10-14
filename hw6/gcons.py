@@ -89,6 +89,17 @@ def CreateConstraint(json_cons, body_i, body_j):
     return con
 
 
+def InitTwoBodyModel(file_name):
+    (bodies, constraints) = ReadModelFile(file_name)
+
+    body_i = Body(bodies[0])
+    body_j = Body(bodies[1])
+
+    cons = [CreateConstraint(con, body_i, body_j) for con in constraints]
+
+    return cons
+
+
 def ReadModelFile(file_name):
     with open(file_name) as model_file:
         model_data = js.load(model_file)
@@ -96,13 +107,7 @@ def ReadModelFile(file_name):
         model_bodies = model_data['bodies']
         model_constraints = model_data['constraints']
 
-        body_i = Body(model_bodies[0])
-        body_j = Body(model_bodies[1])
-
-        cons = [CreateConstraint(con, body_i, body_j)
-                for con in model_constraints]
-
-    return cons
+    return (model_bodies, model_constraints)
 
 
 class Body:
@@ -150,33 +155,33 @@ class CD:
 
         self.c = c
 
-        self.f = np.array([[f]])
-        self.df = np.array([[df]])
-        self.ddf = np.array([[ddf]])
+        self.f = lambda t: 0
+        self.df = lambda t: 0
+        self.ddf = lambda t: 0
 
-    def GetPhi(self):
+    def GetPhi(self, t):
         Ai = GetAMatrix(self.body_i.p)
         Aj = GetAMatrix(self.body_j.p)
 
-        return self.c.T @ (self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si) - self.f
+        return self.c.T @ (self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si) - self.f(t)
 
-    def GetGamma(self):
+    def GetGamma(self, t):
         term1 = GetBMatrix(self.body_i.dp, self.si) @ self.body_i.dp
         term2 = GetBMatrix(self.body_j.dp, self.sj) @ self.body_j.dp
 
-        return self.c.T @ (term1 - term2) + self.ddf
+        return self.c.T @ (term1 - term2) + self.ddf(t)
 
-    def GetNu(self):
-        return self.df
+    def GetNu(self, t):
+        return [[self.df(t)]]
 
-    def GetPhiR(self):
+    def GetPhiR(self, t):
         if self.body_i.is_ground:
             return self.c.T
         if self.body_j.is_ground:
             return -self.c.T
         return np.concatenate((-self.c.T, self.c.T), axis=1)
 
-    def GetPhiP(self):
+    def GetPhiP(self, t):
         Bpj = self.c.T @ GetBMatrix(self.body_j.p, self.sj)
         Bpi = -self.c.T @ GetBMatrix(self.body_i.p, self.si)
 
@@ -208,17 +213,17 @@ class DP1:
         self.ai = ai
         self.aj = aj
 
-        self.f = np.array([[f]])
-        self.df = np.array([[df]])
-        self.ddf = np.array([[ddf]])
+        self.f = lambda t: 0
+        self.df = lambda t: 0
+        self.ddf = lambda t: 0
 
-    def GetPhi(self):
+    def GetPhi(self, t):
         Ai = GetAMatrix(self.body_i.p)
         Aj = GetAMatrix(self.body_j.p)
 
-        return self.ai.T @ Ai.T @ Aj @ self.aj - self.f
+        return self.ai.T @ Ai.T @ Aj @ self.aj - self.f(t)
 
-    def GetGamma(self):
+    def GetGamma(self, t):
         B_dpj = GetBMatrix(self.body_j.dp, self.aj)
         B_dpi = GetBMatrix(self.body_i.dp, self.ai)
 
@@ -232,19 +237,19 @@ class DP1:
         aj_dot = GetBMatrix(self.body_j.p, self.aj) @ self.body_j.dp
 
         γ = -aiT @ B_dpj @ self.body_j.dp - ajT @ B_dpi @ self.body_i.dp - \
-            2*ai_dot.T @ aj_dot + self.ddf
+            2*ai_dot.T @ aj_dot + self.ddf(t)
 
         return γ
 
-    def GetNu(self):
-        return self.df
+    def GetNu(self, t):
+        return [[self.df(t)]]
 
-    def GetPhiR(self):
+    def GetPhiR(self, t):
         if self.body_i.is_ground or self.body_j.is_ground:
             return np.zeros((1, 3))
         return np.zeros((1, 6))
 
-    def GetPhiP(self):
+    def GetPhiP(self, t):
         Ai = GetAMatrix(self.body_i.p)
         Aj = GetAMatrix(self.body_j.p)
 
@@ -261,4 +266,3 @@ class DP1:
         # To be more technically correct we could compute our B matrices with respect to [p_i 0 0 0 0] and [0 0 0 0 p_j]
         # but it is just easier to concatenate instead
         return np.concatenate((term_i.T, term_j), axis=1)
-
