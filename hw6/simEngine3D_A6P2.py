@@ -5,6 +5,7 @@ import sympy as sp
 L = 2
 t0 = 0
 Δt = 10e-3
+t_end = 10
 
 # Set up driving constraint
 t = sp.symbols('t')
@@ -90,5 +91,4 @@ nu = g_cons.GetNu(t0)  # Darn, ν ≈ v in my font
 # print(r0)
 # print(p0)
 
-# q = np.concatenate((r0, p0), axis=0) - np.linalg.inv(Φ_q) @ Φ
-# print(q)
+q0 = np.concatenate((r0, p0), axis=0)

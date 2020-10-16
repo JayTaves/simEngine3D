@@ -1,0 +1,7 @@
+- I only got through the position analysis, so I only have two plots
+
+- We can see point O' moving as we expect, it swings across in a circle of radius 2
+- Point Q however 'drifts' substantially from its supposed fixed position at the origin. 
+    This is likely due to the accumulation of numerical error. Likely this would become
+    less pronounced if we decreased the stepsize, but would likely always be present due
+    to instability in our solving process
