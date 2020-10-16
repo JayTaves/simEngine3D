@@ -168,6 +168,7 @@ class Body:
             self.id = dict['id']
 
             self.r = np.array([dict['r']]).T
+            self.dr = np.array([dict['dr']]).T
             p = np.array([dict['p']]).T
             self.p = p / np.linalg.norm(p)
 
@@ -311,6 +312,187 @@ class DP1:
         # To be more technically correct we could compute our B matrices with respect to [p_i 0 0 0 0] and [0 0 0 0 p_j]
         # but it is just easier to concatenate instead
         return np.concatenate((term_i.T, term_j), axis=1).T
+
+
+class DP2:
+    cons_type = Constraints.DP2
+
+    def __init__(self, dict, body_i, body_j):
+        ai = np.array([dict['ai']]).T
+        aj = np.array([dict['aj']]).T
+
+        si = np.array([dict['si']]).T
+        sj = np.array([dict['sj']]).T
+
+        self.Initialize(
+            body_i, body_j, ai, aj, si, sj, dict['f'], dict['df'], dict['ddf'])
+
+    def Initialize(self, body_i, body_j, ai, aj, si, sj, f, df, ddf):
+        self.body_i = body_i
+        self.body_j = body_j
+
+        if body_i.is_ground and body_j.is_ground:
+            raise ValueError('Both bodies cannot be ground')
+
+        self.ai = ai
+        self.aj = aj
+
+        self.si = si
+        self.sj = sj
+
+        self.f = lambda t: 0
+        self.df = lambda t: 0
+        self.ddf = lambda t: 0
+
+    def GetPhi(self, t):
+        Ai = A(self.body_i.p)
+        Aj = A(self.body_j.p)
+
+        return self.ai.T @ Ai.T @ (self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si) - self.f(t)
+
+    def GetGamma(self, t):
+        B_dpi = B(self.body_i.dp, self.si)
+        B_dpj = B(self.body_j.dp, self.sj)
+        B_dpi_ai = B(self.body_i.dp, self.ai)
+
+        Ai = A(self.body_i.p)
+        Aj = A(self.body_j.p)
+
+        aiT = self.ai.T @ Ai.T
+        # ajT = self.aj.T @ Aj.T
+
+        ai_dot = B(self.body_i.p, self.ai) @ self.body_i.dp
+        # aj_dot = B(self.body_j.p, self.aj) @ self.body_j.dp
+
+        dij = self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si
+        dij_dot = self.body_j.dr + B(self.body_j.p, self.sj) @ self.body_j.dp - \
+            self.body_i.dr - B(self.body_i.p, self.si) @ self.body_i.dp
+
+        # I match what is on the slides there, but I think there is a typo...
+        γ = -aiT @ B_dpj @ self.body_j.dp - \
+            aiT @ B_dpi @ self.body_i.dp - \
+            dij.T @ B_dpi_ai @ self.body_i.dp - \
+            2 * ai_dot.T @ dij_dot + self.ddf(t)
+
+        return γ
+
+    def GetNu(self, t):
+        return [[self.df(t)]]
+
+    def GetPhiR(self, t):
+        ai = self.ai.T @ A(self.body_i.p).T
+        if self.body_i.is_ground:
+            return ai
+        if self.body_j.is_ground:
+            return -ai
+        return np.concatenate((-ai, ai), axis=1)
+
+    def GetPhiP(self, t):
+        Ai = A(self.body_i.p)
+        Aj = A(self.body_j.p)
+
+        dij = self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si
+
+        term_i = B(self.body_i.p, self.ai).T @ dij - \
+            self.ai.T @ Ai.T @ B(self.body_i.p, self.si)
+        term_j = self.ai.T @ Ai.T @ B(self.body_j.p, self.sj)
+
+        if self.body_i.is_ground:
+            return term_j.T
+        if self.body_j.is_ground:
+            return term_i.T
+
+        # To be more technically correct we could compute our B matrices with respect to [p_i 0 0 0 0] and [0 0 0 0 p_j]
+        # but it is just easier to concatenate instead
+        return np.concatenate((term_i.T, term_j.T), axis=1).T
+
+
+class D:
+    cons_type = Constraints.D
+
+    def __init__(self, dict, body_i, body_j):
+        ai = np.array([dict['ai']]).T
+        aj = np.array([dict['aj']]).T
+
+        si = np.array([dict['si']]).T
+        sj = np.array([dict['sj']]).T
+
+        self.Initialize(
+            body_i, body_j, ai, aj, si, sj, dict['f'], dict['df'], dict['ddf'])
+
+    def Initialize(self, body_i, body_j, ai, aj, si, sj, f, df, ddf):
+        self.body_i = body_i
+        self.body_j = body_j
+
+        if body_i.is_ground and body_j.is_ground:
+            raise ValueError('Both bodies cannot be ground')
+
+        self.ai = ai
+        self.aj = aj
+
+        self.si = si
+        self.sj = sj
+
+        self.f = lambda t: 0
+        self.df = lambda t: 0
+        self.ddf = lambda t: 0
+
+    def GetPhi(self, t):
+        Ai = A(self.body_i.p)
+        Aj = A(self.body_j.p)
+
+        dij = self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si
+
+        return dij.T @ dij - self.f(t)
+
+    def GetGamma(self, t):
+        B_dpi = B(self.body_i.dp, self.si)
+        B_dpj = B(self.body_j.dp, self.sj)
+
+        Ai = A(self.body_i.p)
+        Aj = A(self.body_j.p)
+
+        dij = self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si
+        dij_dot = self.body_j.dr + B(self.body_j.p, self.sj) @ self.body_j.dp - \
+            self.body_i.dr - B(self.body_i.p, self.si) @ self.body_i.dp
+
+        γ = -2 * dij.T @ B_dpj @ self.body_j.dp + \
+            2 * dij.T @ B_dpi @ self.body_i.dp - \
+            2 * dij_dot.T @ dij_dot + self.ddf(t)
+
+        return γ
+
+    def GetNu(self, t):
+        return [[self.df(t)]]
+
+    def GetPhiR(self, t):
+        Ai = A(self.body_i.p)
+        Aj = A(self.body_j.p)
+        dij = self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si
+
+        if self.body_i.is_ground:
+            return 2*dij
+        if self.body_j.is_ground:
+            return -2*dij
+        return np.concatenate((-2*dij, 2*dij), axis=1)
+
+    def GetPhiP(self, t):
+        Ai = A(self.body_i.p)
+        Aj = A(self.body_j.p)
+
+        dij = self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si
+
+        term_i = -2 * B(self.body_i.p, self.si) @ dij
+        term_j = 2 * B(self.body_j.p, self.sj) @ dij
+
+        if self.body_i.is_ground:
+            return term_j.T
+        if self.body_j.is_ground:
+            return term_i.T
+
+        # To be more technically correct we could compute our B matrices with respect to [p_i 0 0 0 0] and [0 0 0 0 p_j]
+        # but it is just easier to concatenate instead
+        return np.concatenate((term_i.T, term_j.T), axis=1).T
 
 
 class EulerCon:
