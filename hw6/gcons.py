@@ -23,6 +23,32 @@ def CheckVector(v, n):
     return v
 
 
+class Quaternion:
+    """
+    Weird, couldn't find a NumPy/SciPy package for this...
+    """
+
+    def __init__(self, v):
+        v = CheckVector(v, 4)
+        self.r = v[0, 0]
+        self.i = v[1, 0]
+        self.j = v[2, 0]
+        self.k = v[3, 0]
+
+        self.arr = v
+
+    def __mul__(self, other):
+        """
+        Maybe the matrix definition of multiplication is cleaner? idk
+        """
+        r = self.r * other.r - self.i * other.i - self.j * other.j - self.k * other.k
+        i = self.r * other.i + self.i * other.r + self.j * other.k - self.k * other.j
+        j = self.r * other.j - self.i * other.k + self.j * other.r + self.k * other.i
+        k = self.r * other.k + self.i * other.j - self.j * other.i + self.k * other.r
+
+        return Quaternion(np.array([[r], [i], [j], [k]]))
+
+
 def RotAxis(v, θ):
     """
     Gets the quaternion representing a rotation of θ radians about the v axis
@@ -32,7 +58,7 @@ def RotAxis(v, θ):
     e0 = np.array([[np.cos(θ/2)]])
     e = v * np.sin(θ/2)
 
-    return np.concatenate((e0, e), axis=0)
+    return Quaternion(np.concatenate((e0, e), axis=0))
 
 
 def GetCross(v):
@@ -174,7 +200,7 @@ class CD:
         self.si = si
         self.sj = sj
 
-        self.c = lambda t: c
+        self.c = c
 
         self.f = lambda t: 0
         self.df = lambda t: 0
@@ -184,27 +210,27 @@ class CD:
         Ai = A(self.body_i.p)
         Aj = A(self.body_j.p)
 
-        return self.c(t).T @ (self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si) - self.f(t)
+        return self.c.T @ (self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si) - self.f(t)
 
     def GetGamma(self, t):
         term1 = B(self.body_i.dp, self.si) @ self.body_i.dp
         term2 = B(self.body_j.dp, self.sj) @ self.body_j.dp
 
-        return self.c(t).T @ (term1 - term2) + self.ddf(t)
+        return self.c.T @ (term1 - term2) + self.ddf(t)
 
     def GetNu(self, t):
         return [[self.df(t)]]
 
     def GetPhiR(self, t):
         if self.body_i.is_ground:
-            return self.c(t).T
+            return self.c.T
         if self.body_j.is_ground:
-            return -self.c(t).T
-        return np.concatenate((-self.c(t).T, self.c(t).T), axis=1)
+            return -self.c.T
+        return np.concatenate((-self.c.T, self.c.T), axis=1)
 
     def GetPhiP(self, t):
-        Bpj = self.c(t).T @ B(self.body_j.p, self.sj)
-        Bpi = -self.c(t).T @ B(self.body_i.p, self.si)
+        Bpj = self.c.T @ B(self.body_j.p, self.sj)
+        Bpi = -self.c.T @ B(self.body_i.p, self.si)
 
         if self.body_i.is_ground:
             return Bpj
@@ -314,5 +340,19 @@ class ConGroup:
         self.cons = con_list
 
     def GetPhi(self, t):
-        print(tuple([con.GetPhi(t) for con in self.cons]))
         return np.concatenate(tuple([con.GetPhi(t) for con in self.cons]), axis=0)
+
+    def GetGamma(self, t):
+        return np.concatenate(tuple([con.GetGamma(t) for con in self.cons]), axis=0)
+
+    def GetNu(self, t):
+        return np.concatenate(tuple([con.GetNu(t) for con in self.cons]), axis=0)
+
+    def GetPhiR(self, t):
+        return np.concatenate(tuple([con.GetPhiR(t) for con in self.cons]), axis=0)
+
+    def GetPhiP(self, t):
+        return np.concatenate(tuple([con.GetPhiP(t) for con in self.cons]), axis=0)
+
+    def GetPhiQ(self, t):
+        return np.concatenate((self.GetPhiR(t), self.GetPhiP(t)), axis=1)
