@@ -10,6 +10,7 @@ class Constraints(Enum):
     CD = 1
     DP2 = 2
     D = 3
+    Euler = 4
 
 
 def CheckVector(v, n):
@@ -173,7 +174,7 @@ class CD:
         self.si = si
         self.sj = sj
 
-        self.c = c
+        self.c = lambda t: c
 
         self.f = lambda t: 0
         self.df = lambda t: 0
@@ -183,27 +184,27 @@ class CD:
         Ai = A(self.body_i.p)
         Aj = A(self.body_j.p)
 
-        return self.c.T @ (self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si) - self.f(t)
+        return self.c(t).T @ (self.body_j.r + Aj @ self.sj - self.body_i.r - Ai @ self.si) - self.f(t)
 
     def GetGamma(self, t):
         term1 = B(self.body_i.dp, self.si) @ self.body_i.dp
         term2 = B(self.body_j.dp, self.sj) @ self.body_j.dp
 
-        return self.c.T @ (term1 - term2) + self.ddf(t)
+        return self.c(t).T @ (term1 - term2) + self.ddf(t)
 
     def GetNu(self, t):
         return [[self.df(t)]]
 
     def GetPhiR(self, t):
         if self.body_i.is_ground:
-            return self.c.T
+            return self.c(t).T
         if self.body_j.is_ground:
-            return -self.c.T
-        return np.concatenate((-self.c.T, self.c.T), axis=1)
+            return -self.c(t).T
+        return np.concatenate((-self.c(t).T, self.c(t).T), axis=1)
 
     def GetPhiP(self, t):
-        Bpj = self.c.T @ B(self.body_j.p, self.sj)
-        Bpi = -self.c.T @ B(self.body_i.p, self.si)
+        Bpj = self.c(t).T @ B(self.body_j.p, self.sj)
+        Bpi = -self.c(t).T @ B(self.body_i.p, self.si)
 
         if self.body_i.is_ground:
             return Bpj
@@ -277,10 +278,41 @@ class DP1:
         term_j = self.ai.T @ Ai.T @ B(self.body_j.p, self.aj)
 
         if self.body_i.is_ground:
-            return term_j
+            return term_j.T
         if self.body_j.is_ground:
-            return term_i
+            return term_i.T
 
         # To be more technically correct we could compute our B matrices with respect to [p_i 0 0 0 0] and [0 0 0 0 p_j]
         # but it is just easier to concatenate instead
-        return np.concatenate((term_i.T, term_j), axis=1)
+        return np.concatenate((term_i.T, term_j), axis=1).T
+
+
+class EulerCon:
+    cons_type = Constraints.Euler
+
+    def __init__(self, body):
+        self.body = body
+
+    def GetPhi(self, t):
+        return self.body.p.T @ self.body.p - 1
+
+    def GetGamma(self, t):
+        return -2 * (self.body.dp.T @ self.body.dp)
+
+    def GetNu(self, t):
+        return [[0]]
+
+    def GetPhiR(self, t):
+        return np.zeros((1, 3))
+
+    def GetPhiP(self, t):
+        return 2 * self.body.p.T
+
+
+class ConGroup:
+    def __init__(self, con_list):
+        self.cons = con_list
+
+    def GetPhi(self, t):
+        print(tuple([con.GetPhi(t) for con in self.cons]))
+        return np.concatenate(tuple([con.GetPhi(t) for con in self.cons]), axis=0)
