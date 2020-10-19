@@ -13,53 +13,76 @@ X = sp.Matrix([x, y])
 J = F.jacobian(X)
 jac = sp.lambdify((x, y), J)
 
-
-def g_jac(x, y, h): return np.identity(2) - h*jac(x, y)
+F_temp = sp.lambdify((x, y), F)
+def G(Y_k, Y_k1, h): return Y_k - Y_k1 + h*F_temp(Y_k1[0, 0], Y_k1[0, 1]).T
+def g_jac(Y, h): return np.identity(2) - h*jac(Y[0, 0], Y[0, 1])
 # What we need to invert in the iterative process
 
 
 x0 = 0
 y0 = 2
+Y0 = np.array([[0, 2]])
 t0 = 0
 tf = 20
-h = 0.1
+h = 0.01
+tol = 1e-6
+max_iters = 500
 
 
 def NextNewton(f_fn, df_fn, xi):
     # No checking for f'(x0) ≈ 0
-    return xi - f_fn(xi) / df_fn(xi)
+    print(df_fn(xi))
+    print(f_fn(xi))
+    print(np.linalg.inv(df_fn(xi)))
+    return xi - f_fn(xi) @ np.linalg.inv(df_fn(xi))
 
 
 def MultiBackwardEuler(g, dg, h, tol, y0, t0, t_end):
     t_grid = np.arange(t0, t_end, h)
     pts = np.shape(t_grid)[0] + 1
 
-    y_soln = np.zeros(pts)
+    y_soln = np.zeros((pts, 2))
     y_k = y0
-    y_soln[0] = y_k
+    y_soln[0, :] = y_k
 
     # Bind new functions now that we know h
-    def g_euler(y_k, y_k1, t_k1): return g(y_k, y_k1, t_k1, h)
+    def g_euler(y_k, y_k1): return g(y_k, y_k1, h)
     def dg_euler(y_k1): return dg(y_k1, h)
 
-    for i, t_val in enumerate(t_grid):
+    for i, _ in enumerate(t_grid):
+
+        if i > 1:
+            break
 
         # Bind new function now that we know t as well
         # Use y_soln[i-1] as y_k and y_k1 change as we iterate
-        def g_newt(y_k1): return g_euler(y_soln[i], y_k1, t_val)
+        def g_newt(y_k1): return g_euler(y_soln[i, :], y_k1)
 
         k = 0
         y_k1 = NextNewton(g_newt, dg_euler, y_k)
-        while abs(y_k1 - y_k) > tol:
+        while np.linalg.norm(y_k1 - y_k) > tol:
             y_k = y_k1
             y_k1 = NextNewton(g_newt, dg_euler, y_k)
+            print(y_k1)
 
             k = k + 1
-            if k >= 50:
-                print('NR not converging, stopped after 50 iterations')
+            if k >= max_iters:
+                print('NR not converging, stopped after ' +
+                      str(max_iters) + ' iterations')
                 break
 
-        y_soln[i+1] = y_k1
-        # print('i: ' + str(i) + ', k: ' + str(k))
+        y_soln[i+1, :] = y_k1
+        if (i < 100):
+            print('i: ' + str(i) + ', k: ' + str(k))
 
     return y_soln
+
+
+Y = MultiBackwardEuler(G, g_jac, h, tol, Y0, t0, tf)
+ts = np.linspace(t0, tf, int((tf - t0) / h) + 1)
+plt.plot(Y[:, 0], Y[:, 1], 'rx')
+
+# Use finer grid for the exact solution
+t_exact = np.linspace(t0, tf, 10000)
+# plt.plot(t_exact, [soln(t) for t in t_exact])
+plt.show()
