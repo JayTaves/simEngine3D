@@ -15,7 +15,7 @@ jac = sp.lambdify((x, y), J)
 
 F_temp = sp.lambdify((x, y), F)
 def G(Y_k, Y_k1, h): return Y_k - Y_k1 + h*F_temp(Y_k1[0, 0], Y_k1[0, 1]).T
-def g_jac(Y, h): return np.identity(2) - h*jac(Y[0, 0], Y[0, 1])
+def g_jac(Y, h): return -np.identity(2) + h*jac(Y[0, 0], Y[0, 1])
 # What we need to invert in the iterative process
 
 
@@ -24,16 +24,16 @@ y0 = 2
 Y0 = np.array([[0, 2]])
 t0 = 0
 tf = 20
-h = 0.01
-tol = 1e-6
+h = 0.1
+tol = 1e-12
 max_iters = 500
 
 
 def NextNewton(f_fn, df_fn, xi):
     # No checking for f'(x0) ≈ 0
-    print(df_fn(xi))
-    print(f_fn(xi))
-    print(np.linalg.inv(df_fn(xi)))
+    # print(df_fn(xi))
+    # print(f_fn(xi))
+    # print(np.linalg.inv(df_fn(xi)))
     return xi - f_fn(xi) @ np.linalg.inv(df_fn(xi))
 
 
@@ -51,9 +51,6 @@ def MultiBackwardEuler(g, dg, h, tol, y0, t0, t_end):
 
     for i, _ in enumerate(t_grid):
 
-        if i > 1:
-            break
-
         # Bind new function now that we know t as well
         # Use y_soln[i-1] as y_k and y_k1 change as we iterate
         def g_newt(y_k1): return g_euler(y_soln[i, :], y_k1)
@@ -63,7 +60,6 @@ def MultiBackwardEuler(g, dg, h, tol, y0, t0, t_end):
         while np.linalg.norm(y_k1 - y_k) > tol:
             y_k = y_k1
             y_k1 = NextNewton(g_newt, dg_euler, y_k)
-            print(y_k1)
 
             k = k + 1
             if k >= max_iters:
@@ -71,18 +67,39 @@ def MultiBackwardEuler(g, dg, h, tol, y0, t0, t_end):
                       str(max_iters) + ' iterations')
                 break
 
+        # print(str(1 + y_k1[0, 0]**2 - y_k1[0, 1]))
+
         y_soln[i+1, :] = y_k1
-        if (i < 100):
-            print('i: ' + str(i) + ', k: ' + str(k))
+        # if (i < 100):
+        # print('i: ' + str(i) + ', k: ' + str(k))
 
     return y_soln
 
 
+# Plot xy plane
+fig = plt.figure()
 Y = MultiBackwardEuler(G, g_jac, h, tol, Y0, t0, tf)
 ts = np.linspace(t0, tf, int((tf - t0) / h) + 1)
-plt.plot(Y[:, 0], Y[:, 1], 'rx')
+plt.plot(Y[:, 0], Y[:, 1], 'r.')
+fig.suptitle('Flow of points in the xy plane, h = 0.1', fontsize=20)
+plt.xlabel('x', fontsize=18)
+plt.ylabel('y', fontsize=18)
+fig.savefig('hw7/p2-plane.jpg')
 
-# Use finer grid for the exact solution
-t_exact = np.linspace(t0, tf, 10000)
-# plt.plot(t_exact, [soln(t) for t in t_exact])
-plt.show()
+fig = plt.figure()
+Y = MultiBackwardEuler(G, g_jac, h, tol, Y0, t0, tf)
+ts = np.linspace(t0, tf, int((tf - t0) / h) + 1)
+plt.plot(ts, Y[:, 0], 'b.')
+fig.suptitle('x value of solution, h = 0.1', fontsize=20)
+plt.xlabel('t', fontsize=18)
+plt.ylabel('x', fontsize=18)
+fig.savefig('hw7/p2-x.jpg')
+
+fig = plt.figure()
+Y = MultiBackwardEuler(G, g_jac, h, tol, Y0, t0, tf)
+ts = np.linspace(t0, tf, int((tf - t0) / h) + 1)
+plt.plot(ts, Y[:, 1], 'g.')
+fig.suptitle('x value of solution, h = 0.1', fontsize=20)
+plt.xlabel('t', fontsize=18)
+plt.ylabel('y', fontsize=18)
+fig.savefig('hw7/p2-y.jpg')

@@ -114,7 +114,7 @@ def ConvEuler(g, dg, exact, h_list, tol, y0, t0, t_end):
     # Picked these values to get h = 0.01...
     slope_h = np.log10(h_list[6] / h_list[-1])
     slope_err = np.log10(errs[6] / errs[-1])
-    print(slope_err / slope_h)
+    print('Backward Euler slope: ' + str(slope_err / slope_h))
 
     plt.loglog(h_list, errs, 'bx', label='Backward Euler')
 
@@ -134,7 +134,7 @@ def ConvBDF(g, dg, exact, h_list, tol, y0, t0, t_end):
     # Picked these values to get h = 0.01...
     slope_h = np.log10(h_list[6] / h_list[-1])
     slope_err = np.log10(errs[6] / errs[-1])
-    print(slope_err / slope_h)
+    print('BDF4 slope: ' + str(slope_err / slope_h))
 
     plt.loglog(h_list, errs, 'rx', label='BDF4')
 
@@ -148,15 +148,4 @@ ConvBDF(g_bdf, dg_bdf, soln, [1, 0.5, 0.2, 0.1, 0.05, 0.02,
 plt.xlabel('h', fontsize=18)
 plt.ylabel('error', fontsize=18)
 plt.legend(loc='lower right')
-plt.show()
-
-# seed_pts = np.array([soln(t) for t in np.linspace(
-#     t_start, t_start + 3*h, 4, endpoint=True)])
-# y_soln = BDF4(g_bdf, dg_bdf, h, tol, seed_pts, t_start, t_end)
-# ts = np.linspace(t_start, t_end, int((t_end - t_start) / h) + 1)
-# plt.plot(ts, y_soln, 'rx')
-
-# # Use finer grid for the exact solution
-# t_exact = np.linspace(t_start, t_end, 10000)
-# plt.plot(t_exact, [soln(t) for t in t_exact])
-# plt.show()
+fig.savefig('hw7/p3-conv.jpg')
