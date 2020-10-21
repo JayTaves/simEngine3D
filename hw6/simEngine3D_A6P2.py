@@ -9,7 +9,7 @@ t_end = 10
 
 # Set up driving constraint
 t = sp.symbols('t')
-θ_sym = sp.pi/4 * sp.cos(2*t)
+θ_sym = sp.pi/2 + sp.pi/4 * sp.cos(2*t)
 f_sym = sp.cos(θ_sym)
 df_sym = sp.diff(f_sym, t)
 ddf_sym = sp.diff(df_sym, t)
@@ -34,36 +34,40 @@ dp1_drive.df = df
 dp1_drive.ddf = ddf
 
 # DP1 Constraints
-dp1_zy = CreateConstraint(constraints[1], pendulum, ground)
-dp1_zz = CreateConstraint(constraints[2], pendulum, ground)
+dp1_xx = CreateConstraint(constraints[1], pendulum, ground)
+dp1_yx = CreateConstraint(constraints[2], pendulum, ground)
 
 # CD ijk Constraints
 cd_i = CreateConstraint(constraints[3], pendulum, ground)
 cd_j = CreateConstraint(constraints[4], pendulum, ground)
 cd_k = CreateConstraint(constraints[5], pendulum, ground)
 
+cd_i.si = np.array([[-L], [0], [0]])
+cd_j.si = np.array([[-L], [0], [0]])
+cd_k.si = np.array([[-L], [0], [0]])
+
 # Signs flipped here from what you might intuitively expect
 # because of the direction we take the difference (0 - a) vs. (a - 0)
-CD_con_j = -L * sp.sin(θ_sym)
-CD_con_k = L * sp.cos(θ_sym)
+# CD_con_j = -L * sp.sin(θ_sym)
+# CD_con_k = L * sp.cos(θ_sym)
 
-cd_j.f = sp.lambdify(t, CD_con_j)
-cd_j.df = sp.lambdify(t, sp.diff(CD_con_j, t))
-cd_j.ddf = sp.lambdify(t, sp.diff(CD_con_j, t, t))
+# cd_j.f = sp.lambdify(t, CD_con_j)
+# cd_j.df = sp.lambdify(t, sp.diff(CD_con_j, t))
+# cd_j.ddf = sp.lambdify(t, sp.diff(CD_con_j, t, t))
 
-cd_k.f = sp.lambdify(t, CD_con_k)
-cd_k.df = sp.lambdify(t, sp.diff(CD_con_k, t))
-cd_k.ddf = sp.lambdify(t, sp.diff(CD_con_k, t, t))
+# cd_k.f = sp.lambdify(t, CD_con_k)
+# cd_k.df = sp.lambdify(t, sp.diff(CD_con_k, t))
+# cd_k.ddf = sp.lambdify(t, sp.diff(CD_con_k, t, t))
 
 # Euler Parameter Constraint
 e_param = EulerCon(pendulum)
 
 # Derived initializations
 θ0 = θ(t0)
-r0 = np.array([[0], [L * np.sin(θ0)], [-L * np.cos(θ0)]])
+r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
 z_axis = np.array([[0], [0], [1]])
 y_axis = np.array([[0], [1], [0]])
-p0 = (RotAxis(y_axis, np.pi/2) * RotAxis(z_axis, θ0)).arr
+p0 = (RotAxis(y_axis, np.pi/2) * RotAxis(z_axis, θ0 - np.pi/2)).arr
 
 # Didn't read these in from the file, so set them now
 pendulum.r = r0
@@ -71,7 +75,7 @@ pendulum.p = p0
 pendulum.dp = 1/2 * E(p0).T @ (dp1_drive.df(t0) * z_axis)
 
 # Group our constraints together
-g_cons = ConGroup([dp1_drive, dp1_zy, dp1_zz, cd_i, cd_j, cd_k, e_param])
+g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx, dp1_drive, e_param])
 
 # # Compute values
 Φ = g_cons.GetPhi(t0)
@@ -81,9 +85,9 @@ nu = g_cons.GetNu(t0)  # Darn, ν ≈ v in my font
 Φ_p = g_cons.GetPhiP(t0)
 Φ_q = g_cons.GetPhiQ(t0)
 
-# print(Φ)
+print(Φ)
 # print(nu)
-# print(γ)
+print(γ)
 # print(Φ_r)
 # print(Φ_p)
 # print(Φ_q)
