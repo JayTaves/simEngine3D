@@ -1,5 +1,4 @@
 from gcons import *
-from scipy.linalg import lu, lu_factor, lu_solve
 import sympy as sp
 import matplotlib.pyplot as plt
 
@@ -17,12 +16,12 @@ V = L * w**3                        # [m^3] - bar volume
 m = ρ * V                           # [kg] - bar mass
 M = m * np.identity(3)              # [kg] - mass moment tensor
 J_xx = 1/6 * m * w**2               # [kg m^2] - inertia xx component
-J_yz = 1/12 * m * (w**2 + L**2)     # [kg m^2] - inertia yy = zz component
+J_yz = 1/12 * m * (w**2 + (2*L)**2)     # [kg m^2] - inertia yy = zz component
 J = np.diag([J_xx, J_yz, J_yz])     # [kg m^2] - inertia tensor
 Fg = m * g                          # [N] - force of gravity on the body
 
 # Simulation parameters
-tol = 1e-5                          # Convergence threshold for Newton-Raphson
+tol = 1e-12                          # Convergence threshold for Newton-Raphson
 max_iters = 50                      # Iterations to abort after for Newton-Raphson
 
 # Set up driving constraint
@@ -115,6 +114,10 @@ Q_pos = np.zeros((t_steps, 3))
 Q_vel = np.zeros((t_steps, 3))
 Q_acc = np.zeros((t_steps, 3))
 
+# Get arrays to hold Fr and nr data
+Fr = np.zeros((t_steps, 3))
+nr = np.zeros((t_steps, 4))
+
 # Put in the initial values
 Q0 = A(pendulum.p) @ (-L * np.array([[1], [0], [0]]))
 O_pos[0, :] = q0[0:3, 0].T
@@ -129,6 +132,15 @@ O_vel[0, :] = (inv_phi_q @ g_cons.GetNu(t_start))[0:3, 0].T
 O_acc[0, :] = (inv_phi_q @ g_cons.GetGamma(t_start))[0:3, 0].T
 
 print(q0)
+
+
+def G_test(p):
+    e = p[1:, ...]
+    e0 = p[0, 0]
+    ẽ = GetCross(e)
+
+    return np.concatenate((-e, -ẽ + e0 * I3), axis=1)
+
 
 # Set initial conditions
 q_k = q0
@@ -167,9 +179,7 @@ for i, t in enumerate(t_grid):
     pendulum.r = q_k1[0:3]
     pendulum.p = q_k1[3:]
 
-    print(g_cons.GetGamma(t).T)
-
-    # Once the position converges, we can compute velocity and acceleration
+    # Once the position converges, we can compute velocity...
     inv_phi_q = np.linalg.inv(g_cons.GetPhiQ(t))
 
     dq_k = inv_phi_q @ g_cons.GetNu(t)
@@ -177,6 +187,7 @@ for i, t in enumerate(t_grid):
     pendulum.dr = dq_k[0:3]
     pendulum.dp = dq_k[3:]
 
+    # ... and acceleration
     ddq_k = inv_phi_q @ g_cons.GetGamma(t)
 
     # With quantities computed, fill them into our output arrays
@@ -187,6 +198,39 @@ for i, t in enumerate(t_grid):
     O_vel[i, :] = dq_k[0:3, 0].T
     O_acc[i, :] = ddq_k[0:3, 0].T
 
+    # Inverse dynamics
+    # Quantities for the left-hand side
+    #   0:6 removes euler parameter constraint
+    Φ_r_mod = g_cons.GetPhiR(t)[0:6, :]
+    Φ_p_mod = g_cons.GetPhiP(t)[0:6, :]
+    G = pendulum.G()
+    Jp = 4*G.T @ J @ G
+    # M is constant, defined above
+
+    # Quantities for the right-hand side
+    γ = g_cons.GetGamma(t)[0:6, :]
+    γp = -2*pendulum.dp.T @ pendulum.dp
+    τ = -8*pendulum.dG().T @ J @ G @ pendulum.dp
+    # Fg is constant, defined above
+
+    # LHS_mat = np.block([[Φ_r.T[:, 0:6], np.zeros((3, 1))],
+    #                     [Φ_p.T[:, 0:6], pendulum.p]])
+    LHS_mat = np.block([[M, np.zeros((3, 4)), np.zeros((3, 1)), Φ_r_mod.T], [np.zeros((4, 3)), Jp, 2*pendulum.p, Φ_p_mod.T], [
+        np.zeros((1, 3)), 2*pendulum.p.T, 0, np.zeros((1, 6))], [Φ_r_mod, Φ_p_mod, np.zeros((6, 1)), np.zeros((6, 6))]])
+    RHS_mat = np.block([[Fg], [τ], [γp], [γ]])
+
+    rank = np.linalg.matrix_rank(LHS_mat)
+    rows, cols = np.shape(LHS_mat)
+    assert rows == cols and rows == rank, "Deficient LHS matrix"
+
+    x = np.linalg.solve(LHS_mat, RHS_mat)
+    assert np.abs(np.amax(ddq_k[0:3] - x[0:3])) < tol, "Invalid r̈"
+    assert np.abs(np.amax(ddq_k[3:7] - x[3:7])) < tol, "Invalid p̈"
+    λp = x[7]
+    λ = x[8:]
+
+    Fr[i, :] = (-Φ_r_mod.T @ λ).T
+    nr[i, :] = (-Φ_p_mod.T @ λ).T
 
 f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
 # O′ - position
@@ -214,6 +258,29 @@ ax3.set_xlabel('t [s]')
 ax3.set_ylabel('Acceleration [m/s²]')
 
 plt.show()
+
+fig_nr = plt.figure()
+fig_nr.suptitle('Reaction Torque on pendulum')
+plt.plot(t_grid, nr[:, 0])
+plt.plot(t_grid, nr[:, 1])
+# plt.plot(t_grid, nr[:, 2])    # Same values as 0
+# plt.plot(t_grid, nr[:, 3])    # Same values as 1
+plt.xlabel('t', fontsize=18)
+plt.ylabel('Reaction Torque', fontsize=18)
+
+plt.show()
+
+fig_Fr = plt.figure()
+fig_Fr.suptitle('Reaction Force on Pendulum')
+plt.plot(t_grid, Fr[:, 0])
+plt.plot(t_grid, Fr[:, 1])
+plt.plot(t_grid, Fr[:, 2])
+plt.xlabel('t', fontsize=18)
+plt.ylabel('Reaction Force', fontsize=18)
+
+plt.show()
+
+x = 3
 
 # fig = plt.figure()
 # plt.plot(Q_pos[:, 0], Q_pos[:, 1], 'x')
