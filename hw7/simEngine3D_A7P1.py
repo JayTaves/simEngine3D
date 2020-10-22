@@ -46,24 +46,10 @@ ground = Body({}, True)
 # Driving DP1 constraint
 dp1_drive = CreateConstraint(constraints[0], pendulum, ground)
 
-# Testing different version of the driving constraint
-
-
-def test_f(t): return np.cos((np.pi/2)+(np.pi/4)*np.cos(2*t))
-
-
-def test_df(t): return (np.pi*np.sin(2*t) *
-                        np.sin(np.pi/2 + (np.pi*np.cos(2*t))/4))/2
-
-
-def test_ddf(t): return np.pi*np.cos(2*t)*np.sin(np.pi/2 + (np.pi*np.cos(2*t))/4) - \
-    (np.pi**2*np.sin(2*t)**2*np.cos(np.pi/2 + (np.pi*np.cos(2*t))/4))/4
-
-
 # Manually add these functions rather than have the parser do it
-dp1_drive.f = test_f
-dp1_drive.df = test_df
-dp1_drive.ddf = test_ddf
+dp1_drive.f = f
+dp1_drive.df = df
+dp1_drive.ddf = ddf
 
 # DP1 Constraints
 dp1_xx = CreateConstraint(constraints[1], pendulum, ground)
@@ -200,6 +186,7 @@ for i, t in enumerate(t_grid):
 
     O_vel[i, :] = dq_k[0:3, 0].T
     O_acc[i, :] = ddq_k[0:3, 0].T
+
 
 f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
 # O′ - position
