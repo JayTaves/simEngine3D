@@ -92,16 +92,6 @@ nu = g_cons.GetNu(t_start)  # Darn, ν looks like v in my font
 Φ_p = g_cons.GetPhiP(t_start)
 Φ_q = g_cons.GetPhiQ(t_start)
 
-print(Φ)
-# print(nu)
-print(γ)
-# print(Φ_r)
-# print(Φ_p)
-# print(Φ_q)
-
-# print(r0)
-# print(p0)
-
 t_steps = int(t_end/Δt)
 t_grid = np.linspace(t_start, t_end, t_steps, endpoint=True)
 
@@ -118,7 +108,7 @@ Q_acc = np.zeros((t_steps, 3))
 Fr = np.zeros((t_steps, 3))
 nr = np.zeros((t_steps, 4))
 
-# Put in the initial values
+# Put in the initial position/velocity/acceleration values
 Q0 = A(pendulum.p) @ (-L * np.array([[1], [0], [0]]))
 O_pos[0, :] = q0[0:3, 0].T
 Q_pos[0, :] = Q0[0:3, 0].T
@@ -130,17 +120,6 @@ inv_phi_q = np.linalg.inv(g_cons.GetPhiQ(t_start))
 
 O_vel[0, :] = (inv_phi_q @ g_cons.GetNu(t_start))[0:3, 0].T
 O_acc[0, :] = (inv_phi_q @ g_cons.GetGamma(t_start))[0:3, 0].T
-
-print(q0)
-
-
-def G_test(p):
-    e = p[1:, ...]
-    e0 = p[0, 0]
-    ẽ = GetCross(e)
-
-    return np.concatenate((-e, -ẽ + e0 * I3), axis=1)
-
 
 # Set initial conditions
 q_k = q0
@@ -213,8 +192,12 @@ for i, t in enumerate(t_grid):
     τ = -8*pendulum.dG().T @ J @ G @ pendulum.dp
     # Fg is constant, defined above
 
-    # LHS_mat = np.block([[Φ_r.T[:, 0:6], np.zeros((3, 1))],
-    #                     [Φ_p.T[:, 0:6], pendulum.p]])
+    # We could also solve this smaller system instead and get the same result
+    # LHS_mat = np.block([[Φ_r_mod.T, np.zeros((3, 1))],
+    #                     [Φ_p_mod.T, pendulum.p]])
+    # RHS_mat = np.block([[Fg - M @ ddq_k[0:3]], [τ - J @ ddq_k[3:7]]])
+
+    # Here we solve the larger system and redundantly retrieve r̈ and p̈
     LHS_mat = np.block([[M, np.zeros((3, 4)), np.zeros((3, 1)), Φ_r_mod.T], [np.zeros((4, 3)), Jp, 2*pendulum.p, Φ_p_mod.T], [
         np.zeros((1, 3)), 2*pendulum.p.T, 0, np.zeros((1, 6))], [Φ_r_mod, Φ_p_mod, np.zeros((6, 1)), np.zeros((6, 6))]])
     RHS_mat = np.block([[Fg], [τ], [γp], [γ]])
@@ -232,32 +215,36 @@ for i, t in enumerate(t_grid):
     Fr[i, :] = (-Φ_r_mod.T @ λ).T
     nr[i, :] = (-Φ_p_mod.T @ λ).T
 
-f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
-# O′ - position
-ax1.plot(t_grid, O_pos[:, 0])
-ax1.plot(t_grid, O_pos[:, 1])
-ax1.plot(t_grid, O_pos[:, 2])
-ax1.set_title('Position of point O′')
-ax1.set_xlabel('t [s]')
-ax1.set_ylabel('Position [m]')
+# f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
+# # O′ - position
+# ax1.plot(t_grid, O_pos[:, 0])
+# ax1.plot(t_grid, O_pos[:, 1])
+# ax1.plot(t_grid, O_pos[:, 2])
+# ax1.set_title('Position of point O′')
+# ax1.set_xlabel('t [s]')
+# ax1.set_ylabel('Position [m]')
 
-# O′ - velocity
-ax2.plot(t_grid, O_vel[:, 0])
-ax2.plot(t_grid, O_vel[:, 1])
-ax2.plot(t_grid, O_vel[:, 2])
-ax2.set_title('Velocity of point O′')
-ax2.set_xlabel('t [s]')
-ax2.set_ylabel('Velocity [m/s]')
+# # O′ - velocity
+# ax2.plot(t_grid, O_vel[:, 0])
+# ax2.plot(t_grid, O_vel[:, 1])
+# ax2.plot(t_grid, O_vel[:, 2])
+# ax2.set_title('Velocity of point O′')
+# ax2.set_xlabel('t [s]')
+# ax2.set_ylabel('Velocity [m/s]')
 
-# O′ - acceleration
-ax3.plot(t_grid, O_acc[:, 0])
-ax3.plot(t_grid, O_acc[:, 1])
-ax3.plot(t_grid, O_acc[:, 2])
-ax3.set_title('Acceleration of point O′')
-ax3.set_xlabel('t [s]')
-ax3.set_ylabel('Acceleration [m/s²]')
+# # O′ - acceleration
+# ax3.plot(t_grid, O_acc[:, 0])
+# ax3.plot(t_grid, O_acc[:, 1])
+# ax3.plot(t_grid, O_acc[:, 2])
+# ax3.set_title('Acceleration of point O′')
+# ax3.set_xlabel('t [s]')
+# ax3.set_ylabel('Acceleration [m/s²]')
 
-plt.show()
+# plt.show()
+
+# Rather than run the full inverse dynamics at the 0th time step,
+#   just copy the value here so the graph looks nicer...
+nr[0, :] = nr[1, :]
 
 fig_nr = plt.figure()
 fig_nr.suptitle('Reaction Torque on pendulum')
@@ -267,6 +254,7 @@ plt.plot(t_grid, nr[:, 1])
 # plt.plot(t_grid, nr[:, 3])    # Same values as 1
 plt.xlabel('t', fontsize=18)
 plt.ylabel('Reaction Torque', fontsize=18)
+fig_nr.savefig('hw7/ReactionTorque.jpg')
 
 plt.show()
 
@@ -278,9 +266,7 @@ plt.plot(t_grid, Fr[:, 2])
 plt.xlabel('t', fontsize=18)
 plt.ylabel('Reaction Force', fontsize=18)
 
-plt.show()
-
-x = 3
+# plt.show()
 
 # fig = plt.figure()
 # plt.plot(Q_pos[:, 0], Q_pos[:, 1], 'x')
@@ -293,7 +279,3 @@ x = 3
 # fig.savefig('hw6/pointQ.jpg')
 
 # plt.show()
-
-# For velocity solve using nu
-
-# For acceleration solve using gamma

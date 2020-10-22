@@ -114,6 +114,8 @@ def ConvEuler(g, dg, exact, h_list, tol, y0, t0, t_end):
     # Picked these values to get h = 0.01...
     slope_h = np.log10(h_list[6] / h_list[-1])
     slope_err = np.log10(errs[6] / errs[-1])
+
+    # Slope is ~1 as expected (1st order method)
     print('Backward Euler slope: ' + str(slope_err / slope_h))
 
     plt.loglog(h_list, errs, 'bx', label='Backward Euler')
@@ -134,6 +136,8 @@ def ConvBDF(g, dg, exact, h_list, tol, y0, t0, t_end):
     # Picked these values to get h = 0.01...
     slope_h = np.log10(h_list[6] / h_list[-1])
     slope_err = np.log10(errs[6] / errs[-1])
+
+    # Slope is ~4 as expected (4th order method)
     print('BDF4 slope: ' + str(slope_err / slope_h))
 
     plt.loglog(h_list, errs, 'rx', label='BDF4')
