@@ -1,4 +1,5 @@
 from gcons import *
+from scipy.linalg import lu, lu_factor, lu_solve
 import sympy as sp
 import matplotlib.pyplot as plt
 
@@ -45,10 +46,24 @@ ground = Body({}, True)
 # Driving DP1 constraint
 dp1_drive = CreateConstraint(constraints[0], pendulum, ground)
 
+# Testing different version of the driving constraint
+
+
+def test_f(t): return np.cos((np.pi/2)+(np.pi/4)*np.cos(2*t))
+
+
+def test_df(t): return (np.pi*np.sin(2*t) *
+                        np.sin(np.pi/2 + (np.pi*np.cos(2*t))/4))/2
+
+
+def test_ddf(t): return np.pi*np.cos(2*t)*np.sin(np.pi/2 + (np.pi*np.cos(2*t))/4) - \
+    (np.pi**2*np.sin(2*t)**2*np.cos(np.pi/2 + (np.pi*np.cos(2*t))/4))/4
+
+
 # Manually add these functions rather than have the parser do it
-dp1_drive.f = f
-dp1_drive.df = df
-dp1_drive.ddf = ddf
+dp1_drive.f = test_f
+dp1_drive.df = test_df
+dp1_drive.ddf = test_ddf
 
 # DP1 Constraints
 dp1_xx = CreateConstraint(constraints[1], pendulum, ground)
@@ -166,12 +181,16 @@ for i, t in enumerate(t_grid):
     pendulum.r = q_k1[0:3]
     pendulum.p = q_k1[3:]
 
-    # print(g_cons.GetGamma(t)[5, 0])
+    print(g_cons.GetGamma(t).T)
 
     # Once the position converges, we can compute velocity and acceleration
     inv_phi_q = np.linalg.inv(g_cons.GetPhiQ(t))
 
     dq_k = inv_phi_q @ g_cons.GetNu(t)
+
+    pendulum.dr = dq_k[0:3]
+    pendulum.dp = dq_k[3:]
+
     ddq_k = inv_phi_q @ g_cons.GetGamma(t)
 
     # With quantities computed, fill them into our output arrays
@@ -181,33 +200,6 @@ for i, t in enumerate(t_grid):
 
     O_vel[i, :] = dq_k[0:3, 0].T
     O_acc[i, :] = ddq_k[0:3, 0].T
-
-    # Inverse dynamics now
-    Φ_r = g_cons.GetPhiR(t)
-    Φ_p = g_cons.GetPhiP(t)
-    γ = g_cons.GetGamma(t)
-    γp = -2*pendulum.dp.T @ pendulum.dp
-    # print(Φ_r)
-    # print(Φ_p)
-    G = pendulum.G()
-    print(pendulum.p)
-    print(G)
-    Jp = 4*G.T @ J @ G
-
-    A = np.block([[M, np.zeros((3, 4))], [np.zeros((4, 3)), Jp]])
-    B = np.block([[np.zeros((3, 1)), Φ_r.T], [pendulum.p, Φ_p.T]])
-    C = B.T
-    print(np.linalg.matrix_rank(A))
-    print(np.shape(A))
-    print(Jp)
-    print(np.linalg.matrix_rank(Jp))
-    print(np.linalg.matrix_rank(-C @ np.linalg.inv(A) @ B))
-
-    # print(Jp)
-    A_mat = np.block([[M, np.zeros((3, 4)), np.zeros((3, 1)), Φ_r.T], [np.zeros((4, 3)), Jp, pendulum.p, Φ_p.T], [
-                     np.zeros((1, 3)), pendulum.p.T, 0, np.zeros((1, 7))], [Φ_r, Φ_p, np.zeros((7, 1)), np.zeros((7, 7))]])
-    b_mat = np.block([[Fg], [np.zeros((4, 1))], [γp], [γ]])
-    print(np.linalg.matrix_rank(A_mat))
 
 f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
 # O′ - position
