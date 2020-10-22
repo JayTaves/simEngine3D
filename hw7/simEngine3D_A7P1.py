@@ -2,11 +2,27 @@ from gcons import *
 import sympy as sp
 import matplotlib.pyplot as plt
 
-# Parameters
-L = 2
-t0 = 0
-Δt = 10e-3
-t_end = 10
+# Physical constants
+L = 2                               # [m] - length of the bar
+t_start = 0                         # [s] - simulation start time
+Δt = 10e-3                          # [s] - time step size
+t_end = 10                          # [s] - simulation end time
+w = 0.05                            # [m] - side length of bar
+ρ = 7800                            # [kg/m^3] - density of the bar
+g = np.array([[0], [0], [-9.81]])   # [m/s^2] - gravity (global frame)
+
+# Derived constants
+V = L * w**3                        # [m^3] - bar volume
+m = ρ * V                           # [kg] - bar mass
+M = m * np.identity(3)              # [kg] - mass moment tensor
+J_xx = 1/6 * m * w**2               # [kg m^2] - inertia xx component
+J_yz = 1/12 * m * (w**2 + L**2)     # [kg m^2] - inertia yy = zz component
+J = np.diag([J_xx, J_yz, J_yz])     # [kg m^2] - inertia tensor
+Fg = m * g                          # [N] - force of gravity on the body
+
+# Simulation parameters
+tol = 1e-5                          # Convergence threshold for Newton-Raphson
+max_iters = 50                      # Iterations to abort after for Newton-Raphson
 
 # Set up driving constraint
 t = sp.symbols('t')
@@ -43,48 +59,38 @@ cd_i = CreateConstraint(constraints[3], pendulum, ground)
 cd_j = CreateConstraint(constraints[4], pendulum, ground)
 cd_k = CreateConstraint(constraints[5], pendulum, ground)
 
+# Manually add these so that we don't have to hard-code '2' in the .mdl file
 cd_i.si = np.array([[-L], [0], [0]])
 cd_j.si = np.array([[-L], [0], [0]])
 cd_k.si = np.array([[-L], [0], [0]])
 
-# Signs flipped here from what you might intuitively expect
-# because of the direction we take the difference (0 - a) vs. (a - 0)
-# CD_con_j = -L * sp.sin(θ_sym)
-# CD_con_k = L * sp.cos(θ_sym)
-
-# cd_j.f = sp.lambdify(t, CD_con_j)
-# cd_j.df = sp.lambdify(t, sp.diff(CD_con_j, t))
-# cd_j.ddf = sp.lambdify(t, sp.diff(CD_con_j, t, t))
-
-# cd_k.f = sp.lambdify(t, CD_con_k)
-# cd_k.df = sp.lambdify(t, sp.diff(CD_con_k, t))
-# cd_k.ddf = sp.lambdify(t, sp.diff(CD_con_k, t, t))
-
 # Euler Parameter Constraint
 e_param = EulerCon(pendulum)
 
-# Derived initializations
-θ0 = θ(t0)
-r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
+# Get the initial quaternion by rotating around two axes
+θ0 = θ(t_start)
 z_axis = np.array([[0], [0], [1]])
 y_axis = np.array([[0], [1], [0]])
+
 p0 = (RotAxis(y_axis, np.pi/2) * RotAxis(z_axis, θ0 - np.pi/2)).arr
+r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
+q0 = np.concatenate((r0, p0), axis=0)
 
 # Didn't read these in from the file, so set them now
 pendulum.r = r0
 pendulum.p = p0
-pendulum.dp = 1/2 * E(p0).T @ (dp1_drive.df(t0) * z_axis)
+pendulum.dp = 1/2 * pendulum.E().T @ (dp1_drive.df(t_start) * z_axis)
 
 # Group our constraints together
 g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx, dp1_drive, e_param])
 
-# # Compute values
-Φ = g_cons.GetPhi(t0)
-nu = g_cons.GetNu(t0)  # Darn, ν ≈ v in my font
-γ = g_cons.GetGamma(t0)
-Φ_r = g_cons.GetPhiR(t0)
-Φ_p = g_cons.GetPhiP(t0)
-Φ_q = g_cons.GetPhiQ(t0)
+# Compute initial values (HW6)
+Φ = g_cons.GetPhi(t_start)
+nu = g_cons.GetNu(t_start)  # Darn, ν looks like v in my font
+γ = g_cons.GetGamma(t_start)
+Φ_r = g_cons.GetPhiR(t_start)
+Φ_p = g_cons.GetPhiP(t_start)
+Φ_q = g_cons.GetPhiQ(t_start)
 
 print(Φ)
 # print(nu)
@@ -96,21 +102,8 @@ print(γ)
 # print(r0)
 # print(p0)
 
-q0 = np.concatenate((r0, p0), axis=0)
-
-
-def NextNewton(phi, inv_phi_q, q_k):
-    # Caller takes care of the inversion
-    return q_k - inv_phi_q @ phi
-
-
-t_start = 0
-tol = 1e-5
 t_steps = int(t_end/Δt)
 t_grid = np.linspace(t_start, t_end, t_steps, endpoint=True)
-max_iters = 500
-
-M = np
 
 # Get arrays to hold O and Q data
 O_pos = np.zeros((t_steps, 3))
@@ -149,7 +142,7 @@ for i, t in enumerate(t_grid):
 
     # Setup and do Newton-Raphson Iteration
     k = 0
-    q_k1 = NextNewton(phi, inv_phi_q, q_k)
+    q_k1 = q_k - inv_phi_q @ phi
     while np.linalg.norm(q_k1 - q_k) > tol:
         q_k = q_k1
 
@@ -159,8 +152,7 @@ for i, t in enumerate(t_grid):
         inv_phi_q = np.linalg.inv(g_cons.GetPhiQ(t))
         phi = g_cons.GetPhi(t)
 
-        # Uh-oh, do we need to update the bodies as we iterate? So that phi(q, t) is updated?
-        q_k1 = NextNewton(phi, inv_phi_q, q_k)
+        q_k1 = q_k - inv_phi_q @ phi
 
         k = k + 1
         if k >= max_iters:
@@ -174,10 +166,10 @@ for i, t in enumerate(t_grid):
     pendulum.r = q_k1[0:3]
     pendulum.p = q_k1[3:]
 
+    # print(g_cons.GetGamma(t)[5, 0])
+
     # Once the position converges, we can compute velocity and acceleration
     inv_phi_q = np.linalg.inv(g_cons.GetPhiQ(t))
-
-    print(g_cons.GetGamma(t)[5, 0])
 
     dq_k = inv_phi_q @ g_cons.GetNu(t)
     ddq_k = inv_phi_q @ g_cons.GetGamma(t)
@@ -189,6 +181,33 @@ for i, t in enumerate(t_grid):
 
     O_vel[i, :] = dq_k[0:3, 0].T
     O_acc[i, :] = ddq_k[0:3, 0].T
+
+    # Inverse dynamics now
+    Φ_r = g_cons.GetPhiR(t)
+    Φ_p = g_cons.GetPhiP(t)
+    γ = g_cons.GetGamma(t)
+    γp = -2*pendulum.dp.T @ pendulum.dp
+    # print(Φ_r)
+    # print(Φ_p)
+    G = pendulum.G()
+    print(pendulum.p)
+    print(G)
+    Jp = 4*G.T @ J @ G
+
+    A = np.block([[M, np.zeros((3, 4))], [np.zeros((4, 3)), Jp]])
+    B = np.block([[np.zeros((3, 1)), Φ_r.T], [pendulum.p, Φ_p.T]])
+    C = B.T
+    print(np.linalg.matrix_rank(A))
+    print(np.shape(A))
+    print(Jp)
+    print(np.linalg.matrix_rank(Jp))
+    print(np.linalg.matrix_rank(-C @ np.linalg.inv(A) @ B))
+
+    # print(Jp)
+    A_mat = np.block([[M, np.zeros((3, 4)), np.zeros((3, 1)), Φ_r.T], [np.zeros((4, 3)), Jp, pendulum.p, Φ_p.T], [
+                     np.zeros((1, 3)), pendulum.p.T, 0, np.zeros((1, 7))], [Φ_r, Φ_p, np.zeros((7, 1)), np.zeros((7, 7))]])
+    b_mat = np.block([[Fg], [np.zeros((4, 1))], [γp], [γ]])
+    print(np.linalg.matrix_rank(A_mat))
 
 f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
 # O′ - position

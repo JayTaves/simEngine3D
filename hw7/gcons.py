@@ -107,19 +107,6 @@ def B(p, a):
     return 2 * np.concatenate((c1, c2), axis=1)
 
 
-def E(p):
-    """
-    Computes the E matrix E(p) = [-e, ẽ + e_0 I]
-    """
-    p = CheckVector(p, 4)
-
-    e = p[1:, ...]
-    e0 = p[0, 0]
-    ẽ = GetCross(e)
-
-    return np.concatenate((-e, ẽ + e0 * I3), axis=1)
-
-
 def CreateConstraint(json_cons, body_i, body_j):
     con_type = Constraints[json_cons["type"]]
     if con_type == Constraints.DP1:
@@ -178,6 +165,28 @@ class Body:
             dp = np.array([dict['dp']]).T
             dp[3, 0] = -np.dot(dp[0:3, 0], p[0:3, 0]) / p[3, 0]
             self.dp = dp / np.linalg.norm(dp)
+
+    def G(self):
+        """
+        Computes the G matrix G(p) = [-e, -ẽ + e_0 I]
+        """
+
+        e = self.p[1:, ...]
+        e0 = self.p[0, 0]
+        ẽ = GetCross(e)
+
+        return np.concatenate((-e, -ẽ + e0 * I3), axis=1)
+
+    def E(self):
+        """
+        Computes the E matrix E(p) = [-e, ẽ + e_0 I]
+        """
+
+        e = self.p[1:, ...]
+        e0 = self.p[0, 0]
+        ẽ = GetCross(e)
+
+        return np.concatenate((-e, ẽ + e0 * I3), axis=1)
 
 
 class CD:
