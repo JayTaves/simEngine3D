@@ -5,61 +5,54 @@ import matplotlib.pyplot as plt
 # Physical constants
 L = 2                                   # [m] - length of the bar
 t_start = 0                             # [s] - simulation start time
-h = 1e-3                               # [s] - time step size
+h = 1e-3                                # [s] - time step size
 t_end = 10                              # [s] - simulation end time
 w = 0.05                                # [m] - side length of bar
 ρ = 7800                                # [kg/m^3] - density of the bar
 g_acc = np.array([[0], [0], [-9.81]])   # [m/s^2] - gravity (global frame)
 
+# Read from file, set up bodies + constraints
+(file_bodies, constraints) = ReadModelFile('hw8/revJoint.mdl')
+
+bodies = [Body(file_body) for file_body in file_bodies]
+
+pend_1 = bodies[0]
+pend_2 = bodies[1]
+ground = Body({}, True)
+
+nb = len(bodies)  # [-] - number of bodies
+
 # Derived constants
-V = 2*L * w**2                          # [m^3] - bar volume
-m = ρ * V                               # [kg] - bar mass
-M = m * np.identity(3)                  # [kg] - mass moment tensor
-J_xx = 1/6 * m * w**2                   # [kg m^2] - inertia xx component
-J_yz = 1/12 * m * (w**2 + (2*L)**2)     # [kg m^2] - inertia yy = zz component
-J = np.diag([J_xx, J_yz, J_yz])         # [kg m^2] - inertia tensor
-Fg = m * g_acc                          # [N] - force of gravity on the body
+pend_1.V = 2*L * w**2                        # [m^3] - first bar volume
+pend_2.V = L * w**2                          # [m^3] - second bar volume
+
+pend_1.m = ρ * pend_1.V                           # [kg] - first bar mass
+pend_2.m = ρ * pend_2.V                           # [kg] - second bar mass
+
+pend_1.F = pend_1.m * g_acc
+pend_2.F = pend_2.m * g_acc
+M = np.diag([body.m for body in bodies])
+
+J_xx_1 = 1/6 * pend_1.m * w**2
+J_yz_1 = 1/12 * pend_1.m * (w**2 + (2*L)**2)
+J_xx_2 = 1/6 * pend_2.m * w**2
+J_yz_2 = 1/12 * pend_2.m * (w**2 + L**2)
+pend_1.J = np.diag([J_xx_1, J_yz_1, J_yz_1])
+pend_2.J = np.diag([J_xx_2, J_yz_2, J_yz_2])
 
 # Simulation parameters
 tol = 1e-2                         # Convergence threshold for Newton-Raphson
 max_iters = 50                      # Iterations to abort after for Newton-Raphson
 
-# Set up driving constraint
-t = sp.symbols('t')
-θ_sym = sp.pi/2 + sp.pi/4 * sp.cos(2*t)
-f_sym = sp.cos(θ_sym)
-df_sym = sp.diff(f_sym, t)
-ddf_sym = sp.diff(df_sym, t)
-
-θ = sp.lambdify(t, θ_sym)
-f = sp.lambdify(t, f_sym)
-df = sp.lambdify(t, df_sym)
-ddf = sp.lambdify(t, ddf_sym)
-
-# Read from file, set up bodies + constraints
-(bodies, constraints) = ReadModelFile('hw6/revJoint.mdl')
-
-pendulum = Body(bodies[0])
-ground = Body({}, True)
-
-nb = len(bodies)  # [-] - number of bodies
-
-# Driving DP1 constraint - only used to get initial change in orientation (dp)
-dp1_drive = CreateConstraint(constraints[0], pendulum, ground)
-
-# Manually add these functions rather than have the parser do it
-dp1_drive.f = f
-dp1_drive.df = df
-dp1_drive.ddf = ddf
 
 # DP1 Constraints
-dp1_xx = CreateConstraint(constraints[1], pendulum, ground)
-dp1_yx = CreateConstraint(constraints[2], pendulum, ground)
+dp1_xx = CreateConstraint(constraints[1], pend_1, ground)
+dp1_yx = CreateConstraint(constraints[2], pend_1, ground)
 
 # CD ijk Constraints
-cd_i = CreateConstraint(constraints[3], pendulum, ground)
-cd_j = CreateConstraint(constraints[4], pendulum, ground)
-cd_k = CreateConstraint(constraints[5], pendulum, ground)
+cd_i = CreateConstraint(constraints[3], pend_1, ground)
+cd_j = CreateConstraint(constraints[4], pend_1, ground)
+cd_k = CreateConstraint(constraints[5], pend_1, ground)
 
 # Manually add these so that we don't have to hard-code '2' in the .mdl file
 cd_i.si = np.array([[-L], [0], [0]])
@@ -67,23 +60,20 @@ cd_j.si = np.array([[-L], [0], [0]])
 cd_k.si = np.array([[-L], [0], [0]])
 
 # Euler Parameter Constraint
-e_param = EulerCon(pendulum)
+euler_cons = [EulerCon(body) for body in bodies]
 
 # Get the initial quaternion by rotating around two axes
-θ0 = θ(t_start)
 z_axis = np.array([[0], [0], [1]])
 y_axis = np.array([[0], [1], [0]])
 
-p0 = (RotAxis(y_axis, np.pi/2) * RotAxis(z_axis, θ0 - np.pi/2)).arr
-r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
-q0 = np.concatenate((r0, p0), axis=0)
+# Set initial conditions for each pendulum
+pend_1.r = np.array([[0], [L], [0]])
+pend_1.p = (RotAxis(y_axis, np.pi/2) * RotAxis(z_axis, np.pi/2)).arr
 
-# Didn't read these in from the file, so set them now
-pendulum.r = r0
-pendulum.p = p0
-pendulum.dp = 1/2 * pendulum.E().T @ (dp1_drive.df(t_start) * z_axis)
+pend_2.r = np.array([[0], [L], [-L/2]])
+pend_2.p = RotAxis(y_axis, np.pi/2).arr
 
-# Group our constraints together. Don't attach the Euler param constraint or the old driving constraint
+# Group our constraints together. Don't attach the Euler parameter constraints or the old driving constraint
 g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx])
 nc = g_cons.nc
 
@@ -108,24 +98,21 @@ Fr = np.zeros((t_steps, 3))
 nr = np.zeros((t_steps, 3, 6))
 
 # Put in the initial position/velocity/acceleration values
-O_pos[0, :] = q0[0:3, 0].T
+O_pos[0, :] = pend_1.r.T
 
-pendulum.r = r0
-pendulum.p = p0
-
-G = pendulum.G()
+G = pend_1.G()
 Jp = 4*G.T @ J @ G
 # M is constant, defined above
 
 # Quantities for the right-hand side
 γ = g_cons.GetGamma(t_start)[0:nc+1, :]
-γp = -2*pendulum.dp.T @ pendulum.dp
-τ = 8*pendulum.dG().T @ J @ G @ pendulum.dp
+γp = -2*pend_1.dp.T @ pend_1.dp
+τ = 8*pend_1.dG().T @ J @ G @ pend_1.dp
 # Fg is constant, defined above
 
 # Here we solve the larger system and redundantly retrieve r̈ and p̈
-LHS_mat = np.block([[M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T], [np.zeros((4*nb, 3*nb)), Jp, pendulum.p, Φ_p.T], [
-    np.zeros((nb, 3*nb)), pendulum.p.T, 0, np.zeros((nb, nc))], [Φ_r, Φ_p, np.zeros((nc, nb)), np.zeros((nc, nc))]])
+LHS_mat = np.block([[M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T], [np.zeros((4*nb, 3*nb)), Jp, pend_1.p, Φ_p.T], [
+    np.zeros((nb, 3*nb)), pend_1.p.T, 0, np.zeros((nb, nc))], [Φ_r, Φ_p, np.zeros((nc, nb)), np.zeros((nc, nc))]])
 RHS_mat = np.block([[Fg], [τ], [γp], [γ]])
 
 z = np.linalg.solve(LHS_mat, RHS_mat)
@@ -135,9 +122,9 @@ ddp = z[3:7]
 λ = z[8:]
 assert nc == np.shape(λ)[0], "λ has incorrect length"
 
-pendulum.ddr = ddr
-pendulum.ddp = ddp
-O_acc[0, :] = pendulum.ddr.T
+pend_1.ddr = ddr
+pend_1.ddp = ddp
+O_acc[0, :] = pend_1.ddr.T
 
 # Set BDF values
 BDF1_β = 1
@@ -160,39 +147,39 @@ for i, t in enumerate(t_grid):
         α1 = -BDF1_α1
         α2 = -BDF1_α2
 
-        C_r = α1*pendulum.r
-        C_dr = α1*pendulum.dr
+        C_r = α1*pend_1.r
+        C_dr = α1*pend_1.dr
 
-        C_p = α1*pendulum.p
-        C_dp = α1*pendulum.dp
+        C_p = α1*pend_1.p
+        C_dp = α1*pend_1.dp
     else:
         β = BDF2_β
         α0 = -BDF2_α0
         α1 = -BDF2_α1
         α2 = -BDF2_α2
 
-        C_r = α1*pendulum.r + α2*r_prev
-        C_dr = α1*pendulum.dr + α2*dr_prev
+        C_r = α1*pend_1.r + α2*r_prev
+        C_dr = α1*pend_1.dr + α2*dr_prev
 
-        C_p = α1*pendulum.p + α2*p_prev
-        C_dp = α1*pendulum.dp + α2*dp_prev
+        C_p = α1*pend_1.p + α2*p_prev
+        C_dp = α1*pend_1.dp + α2*dp_prev
 
     Ψ0 = np.concatenate(
         (M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T), axis=1)
     Ψ1 = np.concatenate(
-        (np.zeros((4*nb, 3*nb)), Jp, pendulum.p, Φ_p.T), axis=1)
+        (np.zeros((4*nb, 3*nb)), Jp, pend_1.p, Φ_p.T), axis=1)
     Ψ2 = np.concatenate(
-        (np.zeros((nb, 3*nb)), pendulum.p.T, np.zeros((nb, nb)), np.zeros((nb, nc))), axis=1)
+        (np.zeros((nb, 3*nb)), pend_1.p.T, np.zeros((nb, nb)), np.zeros((nb, nc))), axis=1)
     Ψ3 = np.concatenate((Φ_r, Φ_p, np.zeros((nc, nb)),
                          np.zeros((nc, nc))), axis=1)
     Ψ = np.block([[Ψ0], [Ψ1], [Ψ2], [Ψ3]])
     Ψ_inv = np.linalg.inv(Ψ)
 
-    r_prev = pendulum.r
-    p_prev = pendulum.p
+    r_prev = pend_1.r
+    p_prev = pend_1.p
 
-    dr_prev = pendulum.dr
-    dp_prev = pendulum.dp
+    dr_prev = pend_1.dr
+    dp_prev = pend_1.dp
 
     # Setup and do Newton-Raphson Iteration
     k = 0
@@ -204,17 +191,18 @@ for i, t in enumerate(t_grid):
         Φ_q = g_cons.GetPhiQ(t)
         Φ_r = Φ_q[:, 0:3]
         Φ_p = Φ_q[:, 3:7]
-        G = pendulum.G()
+        G = pend_1.G()
         Jp = 4*G.T @ J @ G
         # M is constant, defined above
 
-        τ = 8*pendulum.dG().T @ J @ G @ pendulum.dp
+        τ = 8*pend_1.dG().T @ J @ G @ pend_1.dp
         # Fg is constant, defined above
 
         # Form g matrix
-        g0 = M @ pendulum.ddr + Φ_r.T @ λ - Fg
-        g1 = Jp @ pendulum.ddp + Φ_p.T @ λ + pendulum.p * λp - τ
-        g2 = 1/(β**2 * h**2) * e_param.GetPhi(t)
+        g0 = M @ pend_1.ddr + Φ_r.T @ λ - Fg
+        g1 = Jp @ pend_1.ddp + Φ_p.T @ λ + pend_1.p * λp - τ
+        g2 = 1/(β**2 * h**2) * \
+            np.array([[e_con.GetPhi(t) for e_con in euler_cons]])
         g3 = 1/(β**2 * h**2) * Φ
         g = np.block([[g0], [g1], [g2], [g3]])
 
@@ -222,21 +210,21 @@ for i, t in enumerate(t_grid):
         Δz = -Ψ_inv @ g
         z = z + Δz
 
-        pendulum.ddr = z[0:3]
-        pendulum.ddp = z[3:7]
+        pend_1.ddr = z[0:3]
+        pend_1.ddp = z[3:7]
         λp = z[7]
         λ = z[8:8+nc]
 
-        pendulum.r = C_r + β**2 * h**2 * pendulum.ddr
-        pendulum.p = C_p + β**2 * h**2 * pendulum.ddp
+        pend_1.r = C_r + β**2 * h**2 * pend_1.ddr
+        pend_1.p = C_p + β**2 * h**2 * pend_1.ddp
 
-        pendulum.dr = C_dr + β*h*pendulum.ddr
-        pendulum.dp = C_dp + β*h*pendulum.ddp
+        pend_1.dr = C_dr + β*h*pend_1.ddr
+        pend_1.dp = C_dp + β*h*pend_1.ddp
 
         print('i: ' + str(i) + ', k: ' + str(k) +
               ', norm: ' + str(np.linalg.norm(Δz)))
         print(C_r)
-        print(np.amax(β**2 * h**2 * pendulum.ddr))
+        print(np.amax(β**2 * h**2 * pend_1.ddr))
 
         if np.linalg.norm(Δz) < tol:
             break
@@ -247,9 +235,9 @@ for i, t in enumerate(t_grid):
                   str(max_iters) + ' iterations')
             break
 
-    O_pos[i, :] = pendulum.r.T
-    O_vel[i, :] = pendulum.dr.T
-    O_acc[i, :] = pendulum.ddr.T
+    O_pos[i, :] = pend_1.r.T
+    O_vel[i, :] = pend_1.dr.T
+    O_acc[i, :] = pend_1.ddr.T
 
 f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
 # O′ - position

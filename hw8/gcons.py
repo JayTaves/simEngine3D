@@ -166,6 +166,12 @@ class Body:
             dp[3, 0] = -np.dot(dp[0:3, 0], p[0:3, 0]) / p[3, 0]
             self.dp = dp / np.linalg.norm(dp)
 
+            # Give ourselves some properties to use later
+            self.J = None
+            self.F = None
+            self.m = None
+            self.V = None
+
     def dG(self):
         """
         Computes the Ġ matrix Ġ(p) = d/dt[-e, -ẽ + e_0 I]
