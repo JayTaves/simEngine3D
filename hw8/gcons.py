@@ -536,10 +536,14 @@ class EulerCon:
     def GetPhiP(self, t):
         return 2 * self.body.p.T
 
+    def GetPhiQ(self, t):
+        return np.concatenate((self.GetPhiR(t), self.GetPhiP(t)), axis=1)
+
 
 class ConGroup:
     def __init__(self, con_list):
         self.cons = con_list
+        self.nc = len(self.cons)
 
     def GetPhi(self, t):
         return np.concatenate(tuple([con.GetPhi(t) for con in self.cons]), axis=0)
