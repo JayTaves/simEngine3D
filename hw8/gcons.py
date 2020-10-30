@@ -522,7 +522,7 @@ class EulerCon:
         self.body = body
 
     def GetPhi(self, t):
-        return self.body.p.T @ self.body.p - 1
+        return 0.5*self.body.p.T @ self.body.p - 0.5
 
     def GetGamma(self, t):
         return -2 * (self.body.dp.T @ self.body.dp)
@@ -534,7 +534,7 @@ class EulerCon:
         return np.zeros((1, 3))
 
     def GetPhiP(self, t):
-        return 2 * self.body.p.T
+        return self.body.p.T
 
     def GetPhiQ(self, t):
         return np.concatenate((self.GetPhiR(t), self.GetPhiP(t)), axis=1)

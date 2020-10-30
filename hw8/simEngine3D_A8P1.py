@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 # Physical constants
 L = 2                                   # [m] - length of the bar
 t_start = 0                             # [s] - simulation start time
-h = 10e-3                               # [s] - time step size
+h = 1e-3                               # [s] - time step size
 t_end = 10                              # [s] - simulation end time
 w = 0.05                                # [m] - side length of bar
 ρ = 7800                                # [kg/m^3] - density of the bar
@@ -21,7 +21,7 @@ J = np.diag([J_xx, J_yz, J_yz])         # [kg m^2] - inertia tensor
 Fg = m * g_acc                          # [N] - force of gravity on the body
 
 # Simulation parameters
-tol = 1e-3                         # Convergence threshold for Newton-Raphson
+tol = 1e-2                         # Convergence threshold for Newton-Raphson
 max_iters = 50                      # Iterations to abort after for Newton-Raphson
 
 # Set up driving constraint
@@ -112,9 +112,6 @@ O_pos[0, :] = q0[0:3, 0].T
 
 pendulum.r = r0
 pendulum.p = p0
-
-# Set initial conditions
-q_k = q0
 
 G = pendulum.G()
 Jp = 4*G.T @ J @ G
@@ -221,6 +218,7 @@ for i, t in enumerate(t_grid):
         g3 = 1/(β**2 * h**2) * Φ
         g = np.block([[g0], [g1], [g2], [g3]])
 
+        # Δz = np.linalg.solve(Ψ, -g)
         Δz = -Ψ_inv @ g
         z = z + Δz
 
@@ -237,6 +235,8 @@ for i, t in enumerate(t_grid):
 
         print('i: ' + str(i) + ', k: ' + str(k) +
               ', norm: ' + str(np.linalg.norm(Δz)))
+        print(C_r)
+        print(np.amax(β**2 * h**2 * pendulum.ddr))
 
         if np.linalg.norm(Δz) < tol:
             break
@@ -247,32 +247,36 @@ for i, t in enumerate(t_grid):
                   str(max_iters) + ' iterations')
             break
 
-# f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
-# # O′ - position
-# ax1.plot(t_grid, O_pos[:, 0])
-# ax1.plot(t_grid, O_pos[:, 1])
-# ax1.plot(t_grid, O_pos[:, 2])
-# ax1.set_title('Position of point O′')
-# ax1.set_xlabel('t [s]')
-# ax1.set_ylabel('Position [m]')
+    O_pos[i, :] = pendulum.r.T
+    O_vel[i, :] = pendulum.dr.T
+    O_acc[i, :] = pendulum.ddr.T
 
-# # O′ - velocity
-# ax2.plot(t_grid, O_vel[:, 0])
-# ax2.plot(t_grid, O_vel[:, 1])
-# ax2.plot(t_grid, O_vel[:, 2])
-# ax2.set_title('Velocity of point O′')
-# ax2.set_xlabel('t [s]')
-# ax2.set_ylabel('Velocity [m/s]')
+f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
+# O′ - position
+ax1.plot(t_grid, O_pos[:, 0])
+ax1.plot(t_grid, O_pos[:, 1])
+ax1.plot(t_grid, O_pos[:, 2])
+ax1.set_title('Position of point O′')
+ax1.set_xlabel('t [s]')
+ax1.set_ylabel('Position [m]')
 
-# # O′ - acceleration
-# ax3.plot(t_grid, O_acc[:, 0])
-# ax3.plot(t_grid, O_acc[:, 1])
-# ax3.plot(t_grid, O_acc[:, 2])
-# ax3.set_title('Acceleration of point O′')
-# ax3.set_xlabel('t [s]')
-# ax3.set_ylabel('Acceleration [m/s²]')
+# O′ - velocity
+ax2.plot(t_grid, O_vel[:, 0])
+ax2.plot(t_grid, O_vel[:, 1])
+ax2.plot(t_grid, O_vel[:, 2])
+ax2.set_title('Velocity of point O′')
+ax2.set_xlabel('t [s]')
+ax2.set_ylabel('Velocity [m/s]')
 
-# plt.show()
+# O′ - acceleration
+ax3.plot(t_grid, O_acc[:, 0])
+ax3.plot(t_grid, O_acc[:, 1])
+ax3.plot(t_grid, O_acc[:, 2])
+ax3.set_title('Acceleration of point O′')
+ax3.set_xlabel('t [s]')
+ax3.set_ylabel('Acceleration [m/s²]')
+
+plt.show()
 
 # Rather than run the full inverse dynamics at the 0th time step,
 #   just copy the value here so the graph looks nicer...
