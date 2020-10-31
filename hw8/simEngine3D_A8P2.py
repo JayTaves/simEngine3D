@@ -1,4 +1,4 @@
-from gcons import *
+from gcons_2body import *
 import sympy as sp
 import matplotlib.pyplot as plt
 
@@ -31,7 +31,9 @@ pend_2.m = ρ * pend_2.V                           # [kg] - second bar mass
 
 pend_1.F = pend_1.m * g_acc
 pend_2.F = pend_2.m * g_acc
-M = np.diag([body.m for body in bodies])
+M = np.block([[pend_1.m*np.identity(3), np.zeros((3, 3))],
+              [np.zeros((3, 3)), pend_2.m*np.identity(3)]])
+Fg = np.concatenate(tuple([body.F for body in bodies]), axis=0)
 
 J_xx_1 = 1/6 * pend_1.m * w**2
 J_yz_1 = 1/12 * pend_1.m * (w**2 + (2*L)**2)
@@ -82,49 +84,38 @@ nc = g_cons.nc
 nu = g_cons.GetNu(t_start)  # Darn, ν looks like v in my font
 γ = g_cons.GetGamma(t_start)
 Φ_q = g_cons.GetPhiQ(t_start)
-Φ_r = Φ_q[:, 0:3]
-Φ_p = Φ_q[:, 3:7]
+Φ_r = Φ_q[:, 0:3*nb]
+Φ_p = Φ_q[:, 3*nb:3*nb + 4*nb]
 
 t_steps = int(t_end/h)
 t_grid = np.linspace(t_start, t_end, t_steps, endpoint=True)
 
-# Create arrays to hold O data
-O_pos = np.zeros((t_steps, 3))
-O_vel = np.zeros((t_steps, 3))
-O_acc = np.zeros((t_steps, 3))
-
-# Create arrays to hold Fr and nr data
-Fr = np.zeros((t_steps, 3))
-nr = np.zeros((t_steps, 3, 6))
-
-# Put in the initial position/velocity/acceleration values
-O_pos[0, :] = pend_1.r.T
-
-G = pend_1.G()
-Jp = 4*G.T @ J @ G
-# M is constant, defined above
+Jp = np.block([[pend_1.getJ(), np.zeros((4, 4))],
+               [np.zeros((4, 4)), pend_2.getJ()]])
 
 # Quantities for the right-hand side
-γ = g_cons.GetGamma(t_start)[0:nc+1, :]
-γp = -2*pend_1.dp.T @ pend_1.dp
-τ = 8*pend_1.dG().T @ J @ G @ pend_1.dp
+γ = g_cons.GetGamma(t_start)
+γp = np.concatenate(tuple([-2*body.dp.T @ body.dp for body in bodies]), axis=0)
+τ = np.concatenate(tuple([body.getTau() for body in bodies]), axis=0)
 # Fg is constant, defined above
 
+P = np.block([[pend_1.p, np.zeros((4, 1))], [np.zeros((4, 1)), pend_2.p]])
+
 # Here we solve the larger system and redundantly retrieve r̈ and p̈
-LHS_mat = np.block([[M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T], [np.zeros((4*nb, 3*nb)), Jp, pend_1.p, Φ_p.T], [
-    np.zeros((nb, 3*nb)), pend_1.p.T, 0, np.zeros((nb, nc))], [Φ_r, Φ_p, np.zeros((nc, nb)), np.zeros((nc, nc))]])
+LHS_mat = np.block([[M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T], [np.zeros((4*nb, 3*nb)), Jp, P, Φ_p.T], [
+    np.zeros((nb, 3*nb)), P.T, np.zeros((nb, nb)), np.zeros((nb, nc))], [Φ_r, Φ_p, np.zeros((nc, nb)), np.zeros((nc, nc))]])
 RHS_mat = np.block([[Fg], [τ], [γp], [γ]])
 
 z = np.linalg.solve(LHS_mat, RHS_mat)
-ddr = np.array(z[0:3])
-ddp = z[3:7]
-λp = z[7]
-λ = z[8:]
-assert nc == np.shape(λ)[0], "λ has incorrect length"
 
-pend_1.ddr = ddr
-pend_1.ddp = ddp
-O_acc[0, :] = pend_1.ddr.T
+ddr = [z[3*i:3*(i+1)] for i, _ in enumerate(bodies)]
+ddp = [z[3*nb + 4*i:3*nb + 4*(i+1)] for i, _ in enumerate(bodies)]
+λp = [z[7*nb + i:7*nb + i+1] for i, _ in enumerate(bodies)]
+λ = z[8*nb:8*nb + nc]
+
+for i, body in enumerate(bodies):
+    body.ddr = ddr[i]
+    body.ddp = ddp[i]
 
 # Set BDF values
 BDF1_β = 1
@@ -147,39 +138,41 @@ for i, t in enumerate(t_grid):
         α1 = -BDF1_α1
         α2 = -BDF1_α2
 
-        C_r = α1*pend_1.r
-        C_dr = α1*pend_1.dr
+        C_r = [α1*body.r for body in bodies]
+        C_dr = [α1*body.dr for body in bodies]
 
-        C_p = α1*pend_1.p
-        C_dp = α1*pend_1.dp
+        C_p = [α1*body.p for body in bodies]
+        C_dp = [α1*body.dp for body in bodies]
     else:
         β = BDF2_β
         α0 = -BDF2_α0
         α1 = -BDF2_α1
         α2 = -BDF2_α2
 
-        C_r = α1*pend_1.r + α2*r_prev
-        C_dr = α1*pend_1.dr + α2*dr_prev
+        C_r = [α1*body.r + α2*r_prev[i] for i, body in enumerate(bodies)]
+        C_dr = [α1*body.dr + α2*dr_prev[i] for i, body in enumerate(bodies)]
 
-        C_p = α1*pend_1.p + α2*p_prev
-        C_dp = α1*pend_1.dp + α2*dp_prev
+        C_p = [α1*body.p + α2*p_prev[i] for i, body in enumerate(bodies)]
+        C_dp = [α1*body.dp + α2*dp_prev[i] for i, body in enumerate(bodies)]
+
+    P = np.block([[pend_1.p, np.zeros((4, 1))], [np.zeros((4, 1)), pend_2.p]])
 
     Ψ0 = np.concatenate(
         (M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T), axis=1)
     Ψ1 = np.concatenate(
-        (np.zeros((4*nb, 3*nb)), Jp, pend_1.p, Φ_p.T), axis=1)
+        (np.zeros((4*nb, 3*nb)), Jp, P, Φ_p.T), axis=1)
     Ψ2 = np.concatenate(
-        (np.zeros((nb, 3*nb)), pend_1.p.T, np.zeros((nb, nb)), np.zeros((nb, nc))), axis=1)
+        (np.zeros((nb, 3*nb)), P.T, np.zeros((nb, nb)), np.zeros((nb, nc))), axis=1)
     Ψ3 = np.concatenate((Φ_r, Φ_p, np.zeros((nc, nb)),
                          np.zeros((nc, nc))), axis=1)
     Ψ = np.block([[Ψ0], [Ψ1], [Ψ2], [Ψ3]])
     Ψ_inv = np.linalg.inv(Ψ)
 
-    r_prev = pend_1.r
-    p_prev = pend_1.p
+    r_prev = [body.r for body in bodies]
+    p_prev = [body.p for body in bodies]
 
-    dr_prev = pend_1.dr
-    dp_prev = pend_1.dp
+    dr_prev = [body.dr for body in bodies]
+    dp_prev = [body.dp for body in bodies]
 
     # Setup and do Newton-Raphson Iteration
     k = 0
