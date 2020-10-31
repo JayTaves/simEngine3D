@@ -46,20 +46,33 @@ pend_2.J = np.diag([J_xx_2, J_yz_2, J_yz_2])
 tol = 1e-2                         # Convergence threshold for Newton-Raphson
 max_iters = 50                      # Iterations to abort after for Newton-Raphson
 
-
 # DP1 Constraints
 dp1_xx = CreateConstraint(constraints[1], pend_1, ground)
 dp1_yx = CreateConstraint(constraints[2], pend_1, ground)
+
+dp1_xx_2 = CreateConstraint(constraints[9], pend_2, ground)
+dp1_yx_2 = CreateConstraint(constraints[10], pend_2, ground)
 
 # CD ijk Constraints
 cd_i = CreateConstraint(constraints[3], pend_1, ground)
 cd_j = CreateConstraint(constraints[4], pend_1, ground)
 cd_k = CreateConstraint(constraints[5], pend_1, ground)
+cd_i2 = CreateConstraint(constraints[6], pend_1, pend_2)
+cd_j2 = CreateConstraint(constraints[7], pend_1, pend_2)
+cd_k2 = CreateConstraint(constraints[8], pend_1, pend_2)
 
 # Manually add these so that we don't have to hard-code '2' in the .mdl file
 cd_i.si = np.array([[-L], [0], [0]])
 cd_j.si = np.array([[-L], [0], [0]])
 cd_k.si = np.array([[-L], [0], [0]])
+
+cd_i2.si = np.array([[L], [0], [0]])
+cd_j2.si = np.array([[L], [0], [0]])
+cd_k2.si = np.array([[L], [0], [0]])
+
+cd_i2.sj = np.array([[0], [0], [-L/2]])
+cd_j2.sj = np.array([[0], [0], [-L/2]])
+cd_k2.sj = np.array([[0], [0], [-L/2]])
 
 # Euler Parameter Constraint
 euler_cons = [EulerCon(body) for body in bodies]
@@ -76,7 +89,8 @@ pend_2.r = np.array([[0], [L], [-L/2]])
 pend_2.p = RotAxis(y_axis, np.pi/2).arr
 
 # Group our constraints together. Don't attach the Euler parameter constraints or the old driving constraint
-g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx])
+g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx,
+                   cd_i2, cd_j2, cd_k2, dp1_xx_2, dp1_yx_2])
 nc = g_cons.nc
 
 # Compute initial values
@@ -89,6 +103,8 @@ nu = g_cons.GetNu(t_start)  # Darn, ν looks like v in my font
 
 t_steps = int(t_end/h)
 t_grid = np.linspace(t_start, t_end, t_steps, endpoint=True)
+
+vel_con_norm = np.zeros((t_steps, 1))
 
 Jp = np.block([[pend_1.getJ(), np.zeros((4, 4))],
                [np.zeros((4, 4)), pend_2.getJ()]])
@@ -110,7 +126,8 @@ z = np.linalg.solve(LHS_mat, RHS_mat)
 
 ddr = [z[3*i:3*(i+1)] for i, _ in enumerate(bodies)]
 ddp = [z[3*nb + 4*i:3*nb + 4*(i+1)] for i, _ in enumerate(bodies)]
-λp = [z[7*nb + i:7*nb + i+1] for i, _ in enumerate(bodies)]
+λp = np.concatenate(tuple([z[7*nb + i:7*nb + i+1]
+                           for i, _ in enumerate(bodies)]), axis=0)
 λ = z[8*nb:8*nb + nc]
 
 for i, body in enumerate(bodies):
@@ -182,20 +199,25 @@ for i, t in enumerate(t_grid):
         #   use e.g. body.p in their computations and body.p gets updated as we iterate
         Φ = g_cons.GetPhi(t)
         Φ_q = g_cons.GetPhiQ(t)
-        Φ_r = Φ_q[:, 0:3]
-        Φ_p = Φ_q[:, 3:7]
-        G = pend_1.G()
-        Jp = 4*G.T @ J @ G
-        # M is constant, defined above
+        Φ_r = Φ_q[:, 0:3*nb]
+        Φ_p = Φ_q[:, 3*nb:3*nb + 4*nb]
+        Jp = np.block([[pend_1.getJ(), np.zeros((4, 4))],
+                       [np.zeros((4, 4)), pend_2.getJ()]])
 
-        τ = 8*pend_1.dG().T @ J @ G @ pend_1.dp
-        # Fg is constant, defined above
+        τ = np.concatenate(tuple([body.getTau() for body in bodies]), axis=0)
+
+        P = np.block([[pend_1.p, np.zeros((4, 1))],
+                      [np.zeros((4, 1)), pend_2.p]])
+
+        ddr = np.concatenate(tuple([body.ddr for body in bodies]), axis=0)
+        ddp = np.concatenate(tuple([body.ddp for body in bodies]), axis=0)
 
         # Form g matrix
-        g0 = M @ pend_1.ddr + Φ_r.T @ λ - Fg
-        g1 = Jp @ pend_1.ddp + Φ_p.T @ λ + pend_1.p * λp - τ
+        g0 = M @ ddr + Φ_r.T @ λ - Fg
+        g1 = Jp @ ddp + Φ_p.T @ λ + P @ λp - τ
         g2 = 1/(β**2 * h**2) * \
-            np.array([[e_con.GetPhi(t) for e_con in euler_cons]])
+            np.concatenate(tuple([e_con.GetPhi(t)
+                                  for e_con in euler_cons]), axis=0)
         g3 = 1/(β**2 * h**2) * Φ
         g = np.block([[g0], [g1], [g2], [g3]])
 
@@ -203,21 +225,25 @@ for i, t in enumerate(t_grid):
         Δz = -Ψ_inv @ g
         z = z + Δz
 
-        pend_1.ddr = z[0:3]
-        pend_1.ddp = z[3:7]
-        λp = z[7]
-        λ = z[8:8+nc]
+        ddr = [z[3*i:3*(i+1)] for i, _ in enumerate(bodies)]
+        ddp = [z[3*nb + 4*i:3*nb + 4*(i+1)] for i, _ in enumerate(bodies)]
+        λp = np.concatenate(tuple([z[7*nb + i:7*nb + i+1]
+                                   for i, _ in enumerate(bodies)]), axis=0)
+        λ = z[8*nb:8*nb + nc]
 
-        pend_1.r = C_r + β**2 * h**2 * pend_1.ddr
-        pend_1.p = C_p + β**2 * h**2 * pend_1.ddp
+        for i, body in enumerate(bodies):
+            body.ddr = ddr[i]
+            body.ddp = ddp[i]
 
-        pend_1.dr = C_dr + β*h*pend_1.ddr
-        pend_1.dp = C_dp + β*h*pend_1.ddp
+        for i, body in enumerate(bodies):
+            body.r = C_r[i] + β**2 * h**2 * body.ddr
+            body.p = C_p[i] + β**2 * h**2 * body.ddp
+
+            body.dr = C_dr[i] + β*h*body.ddr
+            body.dp = C_dp[i] + β*h*body.ddp
 
         print('i: ' + str(i) + ', k: ' + str(k) +
               ', norm: ' + str(np.linalg.norm(Δz)))
-        print(C_r)
-        print(np.amax(β**2 * h**2 * pend_1.ddr))
 
         if np.linalg.norm(Δz) < tol:
             break
@@ -228,9 +254,12 @@ for i, t in enumerate(t_grid):
                   str(max_iters) + ' iterations')
             break
 
-    O_pos[i, :] = pend_1.r.T
-    O_vel[i, :] = pend_1.dr.T
-    O_acc[i, :] = pend_1.ddr.T
+    # Compute violation of velocity kinematic constraint
+    # Use the index 5: because the constraints for the 2nd revolute joint are all at the end
+    dr = np.concatenate(tuple([body.dr for body in bodies]))
+    dp = np.concatenate(tuple([body.dp for body in bodies]))
+    vel_con = Φ_r[5:, :] @ dr + Φ_p[5:, :] @ dp - g_cons.GetNu(t)[5:, :]
+    vel_con_norm[i] = np.linalg.norm(vel_con)
 
 f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
 # O′ - position

@@ -103,6 +103,9 @@ O_pos = np.zeros((t_steps, 3))
 O_vel = np.zeros((t_steps, 3))
 O_acc = np.zeros((t_steps, 3))
 
+# Velocity constraint violation data
+vel_con_norm = np.zeros((t_steps, 1))
+
 # Create arrays to hold Fr and nr data
 Fr = np.zeros((t_steps, 3))
 nr = np.zeros((t_steps, 3, 6))
@@ -235,8 +238,6 @@ for i, t in enumerate(t_grid):
 
         print('i: ' + str(i) + ', k: ' + str(k) +
               ', norm: ' + str(np.linalg.norm(Δz)))
-        print(C_r)
-        print(np.amax(β**2 * h**2 * pendulum.ddr))
 
         if np.linalg.norm(Δz) < tol:
             break
@@ -246,6 +247,10 @@ for i, t in enumerate(t_grid):
             print('NR not converging, stopped after ' +
                   str(max_iters) + ' iterations')
             break
+
+    # Compute violation of velocity kinematic constraint
+    vel_con = Φ_r @ pendulum.dr + Φ_p @ pendulum.dp - g_cons.GetNu(t)
+    vel_con_norm[i] = np.linalg.norm(vel_con)
 
     O_pos[i, :] = pendulum.r.T
     O_vel[i, :] = pendulum.dr.T
