@@ -105,6 +105,7 @@ t_steps = int(t_end/h)
 t_grid = np.linspace(t_start, t_end, t_steps, endpoint=True)
 
 vel_con_norm = np.zeros((t_steps, 1))
+omega = [np.zeros((t_steps, 3)) for body in bodies]
 
 Jp = np.block([[pend_1.getJ(), np.zeros((4, 4))],
                [np.zeros((4, 4)), pend_2.getJ()]])
@@ -166,11 +167,11 @@ for i, t in enumerate(t_grid):
         α1 = -BDF2_α1
         α2 = -BDF2_α2
 
-        C_r = [α1*body.r + α2*r_prev[i] for i, body in enumerate(bodies)]
-        C_dr = [α1*body.dr + α2*dr_prev[i] for i, body in enumerate(bodies)]
+        C_r = [α1*body.r + α2*r_prev[j] for j, body in enumerate(bodies)]
+        C_dr = [α1*body.dr + α2*dr_prev[j] for j, body in enumerate(bodies)]
 
-        C_p = [α1*body.p + α2*p_prev[i] for i, body in enumerate(bodies)]
-        C_dp = [α1*body.dp + α2*dp_prev[i] for i, body in enumerate(bodies)]
+        C_p = [α1*body.p + α2*p_prev[j] for j, body in enumerate(bodies)]
+        C_dp = [α1*body.dp + α2*dp_prev[j] for j, body in enumerate(bodies)]
 
     P = np.block([[pend_1.p, np.zeros((4, 1))], [np.zeros((4, 1)), pend_2.p]])
 
@@ -225,22 +226,22 @@ for i, t in enumerate(t_grid):
         Δz = -Ψ_inv @ g
         z = z + Δz
 
-        ddr = [z[3*i:3*(i+1)] for i, _ in enumerate(bodies)]
-        ddp = [z[3*nb + 4*i:3*nb + 4*(i+1)] for i, _ in enumerate(bodies)]
-        λp = np.concatenate(tuple([z[7*nb + i:7*nb + i+1]
-                                   for i, _ in enumerate(bodies)]), axis=0)
+        ddr = [z[3*j:3*(j+1)] for j, _ in enumerate(bodies)]
+        ddp = [z[3*nb + 4*j:3*nb + 4*(j+1)] for j, _ in enumerate(bodies)]
+        λp = np.concatenate(tuple([z[7*nb + j:7*nb + j+1]
+                                   for j, _ in enumerate(bodies)]), axis=0)
         λ = z[8*nb:8*nb + nc]
 
-        for i, body in enumerate(bodies):
-            body.ddr = ddr[i]
-            body.ddp = ddp[i]
+        for j, body in enumerate(bodies):
+            body.ddr = ddr[j]
+            body.ddp = ddp[j]
 
-        for i, body in enumerate(bodies):
-            body.r = C_r[i] + β**2 * h**2 * body.ddr
-            body.p = C_p[i] + β**2 * h**2 * body.ddp
+        for j, body in enumerate(bodies):
+            body.r = C_r[j] + β**2 * h**2 * body.ddr
+            body.p = C_p[j] + β**2 * h**2 * body.ddp
 
-            body.dr = C_dr[i] + β*h*body.ddr
-            body.dp = C_dp[i] + β*h*body.ddp
+            body.dr = C_dr[j] + β*h*body.ddr
+            body.dp = C_dp[j] + β*h*body.ddp
 
         print('i: ' + str(i) + ', k: ' + str(k) +
               ', norm: ' + str(np.linalg.norm(Δz)))
@@ -261,66 +262,7 @@ for i, t in enumerate(t_grid):
     vel_con = Φ_r[5:, :] @ dr + Φ_p[5:, :] @ dp - g_cons.GetNu(t)[5:, :]
     vel_con_norm[i] = np.linalg.norm(vel_con)
 
-f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
-# O′ - position
-ax1.plot(t_grid, O_pos[:, 0])
-ax1.plot(t_grid, O_pos[:, 1])
-ax1.plot(t_grid, O_pos[:, 2])
-ax1.set_title('Position of point O′')
-ax1.set_xlabel('t [s]')
-ax1.set_ylabel('Position [m]')
-
-# O′ - velocity
-ax2.plot(t_grid, O_vel[:, 0])
-ax2.plot(t_grid, O_vel[:, 1])
-ax2.plot(t_grid, O_vel[:, 2])
-ax2.set_title('Velocity of point O′')
-ax2.set_xlabel('t [s]')
-ax2.set_ylabel('Velocity [m/s]')
-
-# O′ - acceleration
-ax3.plot(t_grid, O_acc[:, 0])
-ax3.plot(t_grid, O_acc[:, 1])
-ax3.plot(t_grid, O_acc[:, 2])
-ax3.set_title('Acceleration of point O′')
-ax3.set_xlabel('t [s]')
-ax3.set_ylabel('Acceleration [m/s²]')
-
-plt.show()
-
-# Rather than run the full inverse dynamics at the 0th time step,
-#   just copy the value here so the graph looks nicer...
-nr[0, :] = nr[1, :]
-
-fig_nr = plt.figure()
-fig_nr.suptitle('Reaction Torque on pendulum')
-plt.plot(t_grid, nr[:, 0, 5])
-plt.plot(t_grid, nr[:, 1, 5])
-plt.plot(t_grid, nr[:, 2, 5])
-plt.xlabel('t', fontsize=18)
-plt.ylabel('Reaction Torque', fontsize=18)
-fig_nr.savefig('hw7/ReactionTorque.jpg')
-
-plt.show()
-
-fig_Fr = plt.figure()
-fig_Fr.suptitle('Reaction Force on Pendulum')
-plt.plot(t_grid, Fr[:, 0])
-plt.plot(t_grid, Fr[:, 1])
-plt.plot(t_grid, Fr[:, 2])
-plt.xlabel('t', fontsize=18)
-plt.ylabel('Reaction Force', fontsize=18)
-
-# plt.show()
-
-# fig = plt.figure()
-# plt.plot(Q_pos[:, 0], Q_pos[:, 1], 'x')
-# fig.suptitle('Position of point Q', fontsize=20)
-# axes = plt.gca()
-# axes.set_xlim([-4, 4])
-# axes.set_ylim([-4, 4])
-# plt.xlabel('y', fontsize=18)
-# plt.ylabel('z', fontsize=18)
-# fig.savefig('hw6/pointQ.jpg')
-
-# plt.show()
+    # Compute the angular velocity of the bodies
+    # I think this might be in the wrong frame
+    for j, body in enumerate(bodies):
+        omega[j][i, :] = (2*body.G() @ body.dp).T

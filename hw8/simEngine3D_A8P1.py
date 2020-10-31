@@ -106,6 +106,9 @@ O_acc = np.zeros((t_steps, 3))
 # Velocity constraint violation data
 vel_con_norm = np.zeros((t_steps, 1))
 
+# Angular velocity data
+omega = np.zeros((t_steps, 3))
+
 # Create arrays to hold Fr and nr data
 Fr = np.zeros((t_steps, 3))
 nr = np.zeros((t_steps, 3, 6))
@@ -251,6 +254,9 @@ for i, t in enumerate(t_grid):
     # Compute violation of velocity kinematic constraint
     vel_con = Φ_r @ pendulum.dr + Φ_p @ pendulum.dp - g_cons.GetNu(t)
     vel_con_norm[i] = np.linalg.norm(vel_con)
+
+    # Compute body angular velocity
+    omega[i, :] = (2*pendulum.G() @ pendulum.dp).T
 
     O_pos[i, :] = pendulum.r.T
     O_vel[i, :] = pendulum.dr.T
