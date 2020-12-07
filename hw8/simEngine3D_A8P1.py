@@ -1,11 +1,12 @@
 from gcons import *
+from collections import namedtuple
 import sympy as sp
 import matplotlib.pyplot as plt
 
 # Physical constants
 L = 2                                   # [m] - length of the bar
 t_start = 0                             # [s] - simulation start time
-h = 1e-3                               # [s] - time step size
+h = 1e-2                                # [s] - time step size
 t_end = 10                              # [s] - simulation end time
 w = 0.05                                # [m] - side length of bar
 ρ = 7800                                # [kg/m^3] - density of the bar
@@ -37,7 +38,7 @@ df = sp.lambdify(t, df_sym)
 ddf = sp.lambdify(t, ddf_sym)
 
 # Read from file, set up bodies + constraints
-(bodies, constraints) = ReadModelFile('hw6/revJoint.mdl')
+(bodies, constraints) = ReadModelFile('hw8/revJointSingle.mdl')
 
 pendulum = Body(bodies[0])
 ground = Body({}, True)
@@ -74,8 +75,10 @@ e_param = EulerCon(pendulum)
 z_axis = np.array([[0], [0], [1]])
 y_axis = np.array([[0], [1], [0]])
 
-p0 = (RotAxis(y_axis, np.pi/2) * RotAxis(z_axis, θ0 - np.pi/2)).arr
-r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
+# p0 = (RotAxis(y_axis, np.pi/2) * RotAxis(z_axis, θ0 - np.pi/2)).arr
+# r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
+p0 = np.array([[0.6533], [0.2706], [0.6533], [0.2706]])
+r0 = np.array([[0], [1.4142], [-1.4142]])
 q0 = np.concatenate((r0, p0), axis=0)
 
 # Didn't read these in from the file, so set them now
@@ -130,8 +133,8 @@ Jp = 4*G.T @ J @ G
 # Fg is constant, defined above
 
 # Here we solve the larger system and redundantly retrieve r̈ and p̈
-LHS_mat = np.block([[M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T], [np.zeros((4*nb, 3*nb)), Jp, pendulum.p, Φ_p.T], [
-    np.zeros((nb, 3*nb)), pendulum.p.T, 0, np.zeros((nb, nc))], [Φ_r, Φ_p, np.zeros((nc, nb)), np.zeros((nc, nc))]])
+LHS_mat = np.block([[M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T], [np.zeros((4*nb, 3*nb)), Jp, 2*pendulum.p, Φ_p.T], [
+    np.zeros((nb, 3*nb)), 2*pendulum.p.T, 0, np.zeros((nb, nc))], [Φ_r, Φ_p, np.zeros((nc, nb)), np.zeros((nc, nc))]])
 RHS_mat = np.block([[Fg], [τ], [γp], [γ]])
 
 z = np.linalg.solve(LHS_mat, RHS_mat)
@@ -145,50 +148,35 @@ pendulum.ddr = ddr
 pendulum.ddp = ddp
 O_acc[0, :] = pendulum.ddr.T
 
-# Set BDF values
-BDF1_β = 1
-BDF1_α0 = 1
-BDF1_α1 = -1
-BDF1_α2 = 0
+# So we can use these the first time around
+r_prev = pendulum.r
+p_prev = pendulum.p
 
-BDF2_β = 2/3
-BDF2_α0 = 1
-BDF2_α1 = -4/3
-BDF2_α2 = 1/3
+dr_prev = pendulum.dr
+dp_prev = pendulum.dp
+
+# Setup BDF values
+BDFVals = namedtuple('BDFVals', ['β', 'α'])
+bdf1 = BDFVals(β=1, α=[-1, 1, 0])
+bdf2 = BDFVals(β=2/3, α=[-1, 4/3, -1/3])
 
 for i, t in enumerate(t_grid):
     if i == 0:
         continue
 
-    if i == 1:
-        β = BDF1_β
-        α0 = -BDF1_α0
-        α1 = -BDF1_α1
-        α2 = -BDF1_α2
+    bdf = bdf1 if i == 1 else bdf2
+    C_dr = bdf.α[1]*pendulum.dr + bdf.α[2]*dr_prev
+    C_r = bdf.α[1]*pendulum.r + bdf.α[2]*r_prev + bdf.β*h*C_dr
 
-        C_r = α1*pendulum.r
-        C_dr = α1*pendulum.dr
-
-        C_p = α1*pendulum.p
-        C_dp = α1*pendulum.dp
-    else:
-        β = BDF2_β
-        α0 = -BDF2_α0
-        α1 = -BDF2_α1
-        α2 = -BDF2_α2
-
-        C_r = α1*pendulum.r + α2*r_prev
-        C_dr = α1*pendulum.dr + α2*dr_prev
-
-        C_p = α1*pendulum.p + α2*p_prev
-        C_dp = α1*pendulum.dp + α2*dp_prev
+    C_dp = bdf.α[1]*pendulum.dp + bdf.α[2]*dp_prev
+    C_p = bdf.α[1]*pendulum.p + bdf.α[2]*p_prev + bdf.β*h*C_dp
 
     Ψ0 = np.concatenate(
         (M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T), axis=1)
-    Ψ1 = np.concatenate(
-        (np.zeros((4*nb, 3*nb)), Jp, pendulum.p, Φ_p.T), axis=1)
-    Ψ2 = np.concatenate(
-        (np.zeros((nb, 3*nb)), pendulum.p.T, np.zeros((nb, nb)), np.zeros((nb, nc))), axis=1)
+    Ψ1 = np.concatenate((np.zeros((4*nb, 3*nb)), Jp,
+                         2*pendulum.p, Φ_p.T), axis=1)
+    Ψ2 = np.concatenate((np.zeros((nb, 3*nb)), 2*pendulum.p.T,
+                         np.zeros((nb, nb)), np.zeros((nb, nc))), axis=1)
     Ψ3 = np.concatenate((Φ_r, Φ_p, np.zeros((nc, nb)),
                          np.zeros((nc, nc))), axis=1)
     Ψ = np.block([[Ψ0], [Ψ1], [Ψ2], [Ψ3]])
@@ -203,6 +191,12 @@ for i, t in enumerate(t_grid):
     # Setup and do Newton-Raphson Iteration
     k = 0
     while True:
+        pendulum.r = C_r + bdf.β**2 * h**2 * pendulum.ddr
+        pendulum.p = C_p + bdf.β**2 * h**2 * pendulum.ddp
+
+        pendulum.dr = C_dr + bdf.β*h*pendulum.ddr
+        pendulum.dp = C_dp + bdf.β*h*pendulum.ddp
+
         # Compute values needed for the g matrix
         # We can't move this outside the loop since the g_cons
         #   use e.g. body.p in their computations and body.p gets updated as we iterate
@@ -211,33 +205,26 @@ for i, t in enumerate(t_grid):
         Φ_r = Φ_q[:, 0:3]
         Φ_p = Φ_q[:, 3:7]
         G = pendulum.G()
+        dG = pendulum.dG()
         Jp = 4*G.T @ J @ G
+        τ = 8*dG.T @ J @ dG @ pendulum.p
         # M is constant, defined above
-
-        τ = 8*pendulum.dG().T @ J @ G @ pendulum.dp
         # Fg is constant, defined above
 
         # Form g matrix
         g0 = M @ pendulum.ddr + Φ_r.T @ λ - Fg
-        g1 = Jp @ pendulum.ddp + Φ_p.T @ λ + pendulum.p * λp - τ
-        g2 = 1/(β**2 * h**2) * e_param.GetPhi(t)
-        g3 = 1/(β**2 * h**2) * Φ
+        g1 = Jp @ pendulum.ddp + Φ_p.T @ λ + 2*pendulum.p * λp - τ
+        g2 = 1/(bdf.β**2 * h**2) * e_param.GetPhi(t)
+        g3 = 1/(bdf.β**2 * h**2) * Φ
         g = np.block([[g0], [g1], [g2], [g3]])
 
-        # Δz = np.linalg.solve(Ψ, -g)
-        Δz = -Ψ_inv @ g
+        Δz = Ψ_inv @ -g
         z = z + Δz
 
         pendulum.ddr = z[0:3]
         pendulum.ddp = z[3:7]
         λp = z[7]
         λ = z[8:8+nc]
-
-        pendulum.r = C_r + β**2 * h**2 * pendulum.ddr
-        pendulum.p = C_p + β**2 * h**2 * pendulum.ddp
-
-        pendulum.dr = C_dr + β*h*pendulum.ddr
-        pendulum.dp = C_dp + β*h*pendulum.ddp
 
         print('i: ' + str(i) + ', k: ' + str(k) +
               ', norm: ' + str(np.linalg.norm(Δz)))

@@ -1,0 +1,86 @@
+{
+    "name": "HW5",
+    
+    "bodies": [
+        {
+            "name": "Body i",
+            "id": 0,
+            "r": [2, 0, 0],
+            "dr": [0, 0, 0],
+            "p": [4, 3, -5, 1],
+            "dp": [-0.2, 1.3, 3.4, 0]
+        }
+    ],
+
+    "constraints": [
+        {
+            "name": "DP1-drive",
+            "type": "DP1",
+            "body_i": 0,
+            "body_j": "ground",
+            "ai": [0, 1, 0],
+            "aj": [0, 0, -1],
+            "f": 0,
+            "df": 0,
+            "ddf": 0
+        },
+        {
+            "name": "DP1-x'x",
+            "type": "DP1",
+            "body_i": 0,
+            "body_j": "ground",
+            "ai": [1, 0, 0],
+            "aj": [1, 0, 0],
+            "f": 0,
+            "df": 0,
+            "ddf": 0
+        },
+        {
+            "name": "DP1-y'x",
+            "type": "DP1",
+            "body_i": 0,
+            "body_j": "ground",
+            "ai": [0, 1, 0],
+            "aj": [1, 0, 0],
+            "f": 0,
+            "df": 0,
+            "ddf": 0
+        },
+        {
+            "name": "CDi",
+            "type": "CD",
+            "body_i": 0,
+            "body_j": "ground",
+            "si": [0, 0, 0],
+            "sj": [0, 0, 0],
+            "c": [1, 0, 0],
+            "f": 0,
+            "df": 0,
+            "ddf": 0
+        },
+        {
+            "name": "CDj",
+            "type": "CD",
+            "body_i": 0,
+            "body_j": "ground",
+            "si": [0, 0, 0],
+            "sj": [0, 0, 0],
+            "c": [0, 1, 0],
+            "f": 0,
+            "df": 0,
+            "ddf": 0
+        },
+        {
+            "name": "CDk",
+            "type": "CD",
+            "body_i": 0,
+            "body_j": "ground",
+            "si": [0, 0, 0],
+            "sj": [0, 0, 0],
+            "c": [0, 0, 1],
+            "f": 0,
+            "df": 0,
+            "ddf": 0
+        }
+    ]
+}
