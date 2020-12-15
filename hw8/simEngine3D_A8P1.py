@@ -2,11 +2,17 @@ from gcons import *
 from collections import namedtuple
 import sympy as sp
 import matplotlib.pyplot as plt
+import cProfile
+import pstats
+import io
+from pstats import SortKey
+
+profiler = cProfile.Profile()
 
 # Physical constants
 L = 2                                   # [m] - length of the bar
 t_start = 0                             # [s] - simulation start time
-h = 1e-2                                # [s] - time step size
+h = 1e-3                                # [s] - time step size
 t_end = 10                              # [s] - simulation end time
 w = 0.05                                # [m] - side length of bar
 ρ = 7800                                # [kg/m^3] - density of the bar
@@ -160,6 +166,9 @@ BDFVals = namedtuple('BDFVals', ['β', 'α'])
 bdf1 = BDFVals(β=1, α=[-1, 1, 0])
 bdf2 = BDFVals(β=2/3, α=[-1, 4/3, -1/3])
 
+num_iters = [0] * t_steps
+
+profiler.enable()
 for i, t in enumerate(t_grid):
     if i == 0:
         continue
@@ -226,8 +235,8 @@ for i, t in enumerate(t_grid):
         λp = z[7]
         λ = z[8:8+nc]
 
-        print('i: ' + str(i) + ', k: ' + str(k) +
-              ', norm: ' + str(np.linalg.norm(Δz)))
+        # print('i: ' + str(i) + ', k: ' + str(k) +
+        #       ', norm: ' + str(np.linalg.norm(Δz)))
 
         if np.linalg.norm(Δz) < tol:
             break
@@ -237,6 +246,8 @@ for i, t in enumerate(t_grid):
             print('NR not converging, stopped after ' +
                   str(max_iters) + ' iterations')
             break
+
+    num_iters[i] = k
 
     # Compute violation of velocity kinematic constraint
     vel_con = Φ_r @ pendulum.dr + Φ_p @ pendulum.dp - g_cons.GetNu(t)
@@ -248,67 +259,50 @@ for i, t in enumerate(t_grid):
     O_pos[i, :] = pendulum.r.T
     O_vel[i, :] = pendulum.dr.T
     O_acc[i, :] = pendulum.ddr.T
+profiler.disable()
 
-f, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
-# O′ - position
-ax1.plot(t_grid, O_pos[:, 0])
-ax1.plot(t_grid, O_pos[:, 1])
-ax1.plot(t_grid, O_pos[:, 2])
-ax1.set_title('Position of point O′')
-ax1.set_xlabel('t [s]')
-ax1.set_ylabel('Position [m]')
 
-# O′ - velocity
-ax2.plot(t_grid, O_vel[:, 0])
-ax2.plot(t_grid, O_vel[:, 1])
-ax2.plot(t_grid, O_vel[:, 2])
-ax2.set_title('Velocity of point O′')
-ax2.set_xlabel('t [s]')
-ax2.set_ylabel('Velocity [m/s]')
+def PrintProfiling(profiler):
+    """
+    Prints out profiling information, based on suggestions here https://docs.python.org/3/library/profile.html#module-cProfile
+    """
+    s = io.StringIO()
+    sortby = SortKey.CUMULATIVE
+    ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
+    ps.print_stats()
+    print(s.getvalue())
 
-# O′ - acceleration
-ax3.plot(t_grid, O_acc[:, 0])
-ax3.plot(t_grid, O_acc[:, 1])
-ax3.plot(t_grid, O_acc[:, 2])
-ax3.set_title('Acceleration of point O′')
-ax3.set_xlabel('t [s]')
-ax3.set_ylabel('Acceleration [m/s²]')
 
-plt.show()
+def PlotKinematicsAnalysis(grid, position, velocity, acceleration):
+    _, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
+    # O′ - position
+    ax1.plot(grid, position[:, 0])
+    ax1.plot(grid, position[:, 1])
+    ax1.plot(grid, position[:, 2])
+    ax1.set_title('Position of point O′')
+    ax1.set_xlabel('t [s]')
+    ax1.set_ylabel('Position [m]')
 
-# Rather than run the full inverse dynamics at the 0th time step,
-#   just copy the value here so the graph looks nicer...
-nr[0, :] = nr[1, :]
+    # O′ - velocity
+    ax2.plot(grid, velocity[:, 0])
+    ax2.plot(grid, velocity[:, 1])
+    ax2.plot(grid, velocity[:, 2])
+    ax2.set_title('Velocity of point O′')
+    ax2.set_xlabel('t [s]')
+    ax2.set_ylabel('Velocity [m/s]')
 
-fig_nr = plt.figure()
-fig_nr.suptitle('Reaction Torque on pendulum')
-plt.plot(t_grid, nr[:, 0, 5])
-plt.plot(t_grid, nr[:, 1, 5])
-plt.plot(t_grid, nr[:, 2, 5])
-plt.xlabel('t', fontsize=18)
-plt.ylabel('Reaction Torque', fontsize=18)
-fig_nr.savefig('hw7/ReactionTorque.jpg')
+    # O′ - acceleration
+    ax3.plot(grid, acceleration[:, 0])
+    ax3.plot(grid, acceleration[:, 1])
+    ax3.plot(grid, acceleration[:, 2])
+    ax3.set_title('Acceleration of point O′')
+    ax3.set_xlabel('t [s]')
+    ax3.set_ylabel('Acceleration [m/s²]')
 
-plt.show()
+    plt.show()
 
-fig_Fr = plt.figure()
-fig_Fr.suptitle('Reaction Force on Pendulum')
-plt.plot(t_grid, Fr[:, 0])
-plt.plot(t_grid, Fr[:, 1])
-plt.plot(t_grid, Fr[:, 2])
-plt.xlabel('t', fontsize=18)
-plt.ylabel('Reaction Force', fontsize=18)
 
-# plt.show()
+print('Avg. Iterations: ' + str(np.mean(num_iters)))
 
-# fig = plt.figure()
-# plt.plot(Q_pos[:, 0], Q_pos[:, 1], 'x')
-# fig.suptitle('Position of point Q', fontsize=20)
-# axes = plt.gca()
-# axes.set_xlim([-4, 4])
-# axes.set_ylim([-4, 4])
-# plt.xlabel('y', fontsize=18)
-# plt.ylabel('z', fontsize=18)
-# fig.savefig('hw6/pointQ.jpg')
-
-# plt.show()
+PrintProfiling(profiler)
+# PlotKinematicsAnalysis(t_grid, O_pos, O_vel, O_acc)

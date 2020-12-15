@@ -205,6 +205,18 @@ class Body:
 
         return np.concatenate((-e, ẽ + e0 * I3), axis=1)
 
+    @property
+    def dω(self):
+        return 2*self.G() @ self.ddp
+
+    @property
+    def ω(self):
+        return 2*self.G() @ self.dp
+
+    @property
+    def A(self):
+        return A(self.p)
+
 
 class CD:
     cons_type = Constraints.CD
@@ -246,7 +258,7 @@ class CD:
         return self.c.T @ (term1 - term2) + self.ddf(t)
 
     def GetNu(self, t):
-        return [[self.df(t)]]
+        return [self.df(t)]
 
     def GetPhiR(self, t):
         if self.body_i.is_ground:
@@ -316,7 +328,7 @@ class DP1:
         return γ
 
     def GetNu(self, t):
-        return [[self.df(t)]]
+        return [self.df(t)]
 
     def GetPhiR(self, t):
         if self.body_i.is_ground or self.body_j.is_ground:
@@ -403,7 +415,7 @@ class DP2:
         return γ
 
     def GetNu(self, t):
-        return [[self.df(t)]]
+        return [self.df(t)]
 
     def GetPhiR(self, t):
         ai = self.ai.T @ A(self.body_i.p).T
@@ -489,7 +501,7 @@ class D:
         return γ
 
     def GetNu(self, t):
-        return [[self.df(t)]]
+        return [self.df(t)]
 
     def GetPhiR(self, t):
         Ai = A(self.body_i.p)
@@ -551,20 +563,36 @@ class ConGroup:
         self.cons = con_list
         self.nc = len(self.cons)
 
+        self.Φ = np.zeros((self.nc, 1))
+        self.Φr = np.zeros((self.nc, 3))
+        self.Φp = np.zeros((self.nc, 4))
+        self.γ = np.zeros((self.nc, 1))
+        self.nu = np.zeros((self.nc, 1))
+
     def GetPhi(self, t):
-        return np.concatenate(tuple([con.GetPhi(t) for con in self.cons]), axis=0)
+        for i, con in enumerate(self.cons):
+            self.Φ[i, 0] = con.GetPhi(t)
+        return self.Φ
 
     def GetGamma(self, t):
-        return np.concatenate(tuple([con.GetGamma(t) for con in self.cons]), axis=0)
+        for i, con in enumerate(self.cons):
+            self.γ[i] = con.GetGamma(t)
+        return self.γ
 
     def GetNu(self, t):
-        return np.concatenate(tuple([con.GetNu(t) for con in self.cons]), axis=0)
+        for i, con in enumerate(self.cons):
+            self.nu[i] = con.GetNu(t)
+        return self.nu
 
     def GetPhiR(self, t):
-        return np.concatenate(tuple([con.GetPhiR(t) for con in self.cons]), axis=0)
+        for i, con in enumerate(self.cons):
+            self.Φr[i] = con.GetPhiR(t)
+        return self.Φr
 
     def GetPhiP(self, t):
-        return np.concatenate(tuple([con.GetPhiP(t) for con in self.cons]), axis=0)
+        for i, con in enumerate(self.cons):
+            self.Φp[i] = con.GetPhiP(t)
+        return self.Φp
 
     def GetPhiQ(self, t):
         return np.concatenate((self.GetPhiR(t), self.GetPhiP(t)), axis=1)
