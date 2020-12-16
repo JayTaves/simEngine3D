@@ -1,8 +1,18 @@
 import numpy as np
+from collections import namedtuple
 import json as js
 from enum import Enum
 
 I3 = np.identity(3)
+
+X_AXIS = np.array([[1], [0], [0]])  # x-out of page
+Y_AXIS = np.array([[0], [1], [0]])  # y-right
+Z_AXIS = np.array([[0], [0], [1]])  # z-up
+
+# Setup BDF values
+BDFVals = namedtuple('BDFVals', ['β', 'α'])
+bdf1 = BDFVals(β=1, α=[-1, 1, 0])
+bdf2 = BDFVals(β=2/3, α=[-1, 4/3, -1/3])
 
 
 class Constraints(Enum):
@@ -11,6 +21,21 @@ class Constraints(Enum):
     DP2 = 2
     D = 3
     Euler = 4
+
+
+def BlockMat(lst):
+    """
+    Takes a list (of len k) of (m x n) matrices and assembles a (km x kn) block matrix with the matrices on the diagonal
+    """
+
+    m, n = np.shape(lst[0])
+    k = len(lst)
+
+    ret = np.zeros((m*k, n*k))
+    for i, mat in enumerate(lst):
+        ret[m*i:m*(i+1), n*i:n*(i+1)] = mat
+
+    return ret
 
 
 def CheckVector(v, n):
@@ -148,9 +173,10 @@ class Body:
     def __init__(self, dict, is_ground=False):
         self.is_ground = is_ground
         if is_ground:
-            self.r = np.array([[0, 0, 0]]).T
+            self.r = np.zeros((3, 1))
             self.p = np.array([[1, 0, 0, 0]]).T
-            self.dp = np.array([[0, 0, 0, 0]]).T
+            self.dp = np.zeros((4, 1))
+            self.dr = np.zeros((3, 1))
         else:
             self.id = dict['id']
 
@@ -166,6 +192,29 @@ class Body:
             self.F = None
             self.m = None
             self.V = None
+
+        self.r_prev = self.r
+        self.p_prev = self.p
+        self.dr_prev = self.dr
+        self.dp_prev = self.dp
+
+        self.C_r = 0
+        self.C_p = 0
+        self.C_dr = 0
+        self.C_dp = 0
+
+    def CacheRPValues(self):
+        self.r_prev = self.r
+        self.p_prev = self.p
+        self.dr_prev = self.dr
+        self.dp_prev = self.dp
+
+    def UpdateBDFCoeffs(self, bdf, h):
+        self.C_dr = bdf.α[1]*self.dr + bdf.α[2]*self.dr_prev
+        self.C_r = bdf.α[1]*self.r + bdf.α[2]*self.r_prev + bdf.β*h*self.C_dr
+
+        self.C_dp = bdf.α[1]*self.dp + bdf.α[2]*self.dp_prev
+        self.C_p = bdf.α[1]*self.p + bdf.α[2]*self.p_prev + bdf.β*h*self.C_dp
 
     def dG(self):
         """
@@ -208,6 +257,18 @@ class Body:
     def getTau(self):
         return 8*self.dG().T @ self.J @ self.G() @ self.dp
 
+    @property
+    def dω(self):
+        return 2*self.G() @ self.ddp
+
+    @property
+    def ω(self):
+        return 2*self.G() @ self.dp
+
+    @property
+    def A(self):
+        return A(self.p)
+
 
 class CD:
     cons_type = Constraints.CD
@@ -249,13 +310,13 @@ class CD:
         return self.c.T @ (term1 - term2) + self.ddf(t)
 
     def GetNu(self, t):
-        return [[self.df(t)]]
+        return [self.df(t)]
 
     def GetPhiR(self, t):
         if self.body_i.is_ground:
-            return np.concatenate((np.zeros((1, 3)), self.c.T), axis=1)
+            return self.c.T
         if self.body_j.is_ground:
-            return np.concatenate((-self.c.T, np.zeros((1, 3))), axis=1)
+            return -self.c.T
         return np.concatenate((-self.c.T, self.c.T), axis=1)
 
     def GetPhiP(self, t):
@@ -263,9 +324,9 @@ class CD:
         Bpi = -self.c.T @ B(self.body_i.p, self.si)
 
         if self.body_i.is_ground:
-            return np.concatenate((np.zeros((1, 4)), Bpj), axis=1)
+            return Bpj
         if self.body_j.is_ground:
-            return np.concatenate((Bpi, np.zeros((1, 4))), axis=1)
+            return Bpi
 
         return np.concatenate((Bpi, Bpj), axis=1)
 
@@ -319,9 +380,11 @@ class DP1:
         return γ
 
     def GetNu(self, t):
-        return [[self.df(t)]]
+        return [self.df(t)]
 
     def GetPhiR(self, t):
+        if self.body_i.is_ground or self.body_j.is_ground:
+            return np.zeros((1, 3))
         return np.zeros((1, 6))
 
     def GetPhiP(self, t):
@@ -331,9 +394,14 @@ class DP1:
         term_i = B(self.body_i.p, self.ai).T @ Aj @ self.aj
         term_j = self.ai.T @ Ai.T @ B(self.body_j.p, self.aj)
 
+        if self.body_i.is_ground:
+            return term_j.T
+        if self.body_j.is_ground:
+            return term_i.T
+
         # To be more technically correct we could compute our B matrices with respect to [p_i 0 0 0 0] and [0 0 0 0 p_j]
         # but it is just easier to concatenate instead
-        return np.concatenate((term_i.T, term_j), axis=1)
+        return np.concatenate((term_i.T, term_j), axis=1).T
 
 
 class DP2:
