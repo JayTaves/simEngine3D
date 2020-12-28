@@ -18,7 +18,7 @@ w = 0.05                                # [m] - side length of bar
 g_acc = np.array([[0], [0], [-9.81]])   # [m/s^2] - gravity (global frame)
 
 # Read from file, set up bodies + constraints
-(file_bodies, constraints) = ReadModelFile('hw8/revJoint.mdl')
+(file_bodies, constraints) = ReadModelFile('revJoint.mdl')
 
 bodies = [Body(file_body) for file_body in file_bodies]
 
@@ -27,8 +27,6 @@ pend2 = bodies[1]
 ground = Body({}, True)
 
 # bodies = [bodies[0]]
-
-nb = len(bodies)  # [-] - number of bodies
 
 # Derived constants
 pend1.V = 2*L * w**2                        # [m^3] - first bar volume
@@ -84,9 +82,20 @@ cd_k2.sj = -L/2 * Z_AXIS
 # Euler Parameter Constraint
 euler_cons = [EulerCon(body) for body in bodies]
 
+t = sp.symbols('t')
+θ_sym = sp.pi/2 + sp.pi/4 * sp.cos(2*t)
+θ = sp.lambdify(t, θ_sym)
+θ0 = θ(t_start)
+
+p0 = (RotAxis(Y_AXIS, np.pi/2) * RotAxis(Z_AXIS, θ0 - np.pi/2)).arr
+r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
+
 # Set initial conditions for each pendulum
 pend1.r = L * Y_AXIS
 pend1.p = (RotAxis(Y_AXIS, np.pi/2) * RotAxis(Z_AXIS, np.pi/2)).arr
+
+# pend1.r = r0
+# pend1.p = p0
 
 pend2.r = L*Y_AXIS + -(L/2)*Z_AXIS
 pend2.p = RotAxis(Y_AXIS, np.pi/2).arr
@@ -96,6 +105,7 @@ g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx,
                    cd_i2, cd_j2, cd_k2, dp1_xx_2, dp1_yx_2])
 # g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx])
 nc = g_cons.nc
+nb = g_cons.nb
 
 # Compute initial values
 Φ = g_cons.GetPhi(t_start)
@@ -151,7 +161,7 @@ for i, t in enumerate(t_grid):
     for body in bodies:
         body.UpdateBDFCoeffs(bdf, h)
 
-    P = BlockMat([body.p for body in bodies])
+    P = BlockMat([2*body.p for body in bodies])
 
     Ψ0 = np.concatenate(
         (M, np.zeros((3*nb, 4*nb)), np.zeros((3*nb, nb)), Φ_r.T), axis=1)
@@ -185,7 +195,7 @@ for i, t in enumerate(t_grid):
         Jp = BlockMat([body.getJ() for body in bodies])
         τ = np.vstack([body.getTau() for body in bodies])
 
-        P = BlockMat([body.p for body in bodies])
+        P = BlockMat([2*body.p for body in bodies])
 
         ddr = np.vstack([body.ddr for body in bodies])
         ddp = np.vstack([body.ddp for body in bodies])
@@ -237,3 +247,49 @@ for i, t in enumerate(t_grid):
     for j, body in enumerate(bodies):
         omega[j][i, :] = (2*body.G() @ body.dp).T
 profiler.disable()
+
+
+def PrintProfiling(profiler):
+    """
+    Prints out profiling information, based on suggestions here https://docs.python.org/3/library/profile.html#module-cProfile
+    """
+    s = io.StringIO()
+    sortby = SortKey.CUMULATIVE
+    ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
+    ps.print_stats()
+    print(s.getvalue())
+
+
+def PlotKinematicsAnalysis(grid, position, velocity, acceleration):
+    _, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True)
+    # O′ - position
+    ax1.plot(grid, position[:, 0])
+    ax1.plot(grid, position[:, 1])
+    ax1.plot(grid, position[:, 2])
+    ax1.set_title('Position of point O′')
+    ax1.set_xlabel('t [s]')
+    ax1.set_ylabel('Position [m]')
+
+    # O′ - velocity
+    ax2.plot(grid, velocity[:, 0])
+    ax2.plot(grid, velocity[:, 1])
+    ax2.plot(grid, velocity[:, 2])
+    ax2.set_title('Velocity of point O′')
+    ax2.set_xlabel('t [s]')
+    ax2.set_ylabel('Velocity [m/s]')
+
+    # O′ - acceleration
+    ax3.plot(grid, acceleration[:, 0])
+    ax3.plot(grid, acceleration[:, 1])
+    ax3.plot(grid, acceleration[:, 2])
+    ax3.set_title('Acceleration of point O′')
+    ax3.set_xlabel('t [s]')
+    ax3.set_ylabel('Acceleration [m/s²]')
+
+    plt.show()
+
+
+print('Avg. Iterations: ' + str(np.mean(num_iters)))
+
+PrintProfiling(profiler)
+PlotKinematicsAnalysis(t_grid, O_pos, O_vel, O_acc)

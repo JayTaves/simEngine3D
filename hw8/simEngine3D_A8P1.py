@@ -81,10 +81,8 @@ e_param = EulerCon(pendulum)
 z_axis = np.array([[0], [0], [1]])
 y_axis = np.array([[0], [1], [0]])
 
-# p0 = (RotAxis(y_axis, np.pi/2) * RotAxis(z_axis, θ0 - np.pi/2)).arr
-# r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
-p0 = np.array([[0.6533], [0.2706], [0.6533], [0.2706]])
-r0 = np.array([[0], [1.4142], [-1.4142]])
+p0 = (RotAxis(y_axis, np.pi/2) * RotAxis(z_axis, θ0 - np.pi/2)).arr
+r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
 q0 = np.concatenate((r0, p0), axis=0)
 
 # Didn't read these in from the file, so set them now
