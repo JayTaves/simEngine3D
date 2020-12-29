@@ -18,7 +18,7 @@ w = 0.05                                # [m] - side length of bar
 g_acc = -9.81 * Z_AXIS                  # [m/s^2] - gravity (global frame)
 
 # Read from file, set up bodies + constraints
-(file_bodies, constraints) = ReadModelFile('revJoint.mdl')
+(file_bodies, constraints) = ReadModelFile('hw8/revJoint.mdl')
 
 bodies = [Body(file_body) for file_body in file_bodies]
 
@@ -26,7 +26,7 @@ pend1 = bodies[0]
 pend2 = bodies[1]
 ground = Body({}, True)
 
-bodies = [bodies[0]]
+# bodies = [bodies[0]]
 
 # Derived constants
 pend1.V = 2*L * w**2                        # [m^3] - first bar volume
@@ -75,9 +75,9 @@ cd_i2.si = L * X_AXIS
 cd_j2.si = L * X_AXIS
 cd_k2.si = L * X_AXIS
 
-cd_i2.sj = -L/2 * Z_AXIS
-cd_j2.sj = -L/2 * Z_AXIS
-cd_k2.sj = -L/2 * Z_AXIS
+cd_i2.sj = -L/2 * X_AXIS
+cd_j2.sj = -L/2 * X_AXIS
+cd_k2.sj = -L/2 * X_AXIS
 
 # Euler Parameter Constraint
 euler_cons = [EulerCon(body) for body in bodies]
@@ -94,16 +94,16 @@ r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
 pend1.r = L * Y_AXIS
 pend1.p = (RotAxis(Y_AXIS, np.pi/2) * RotAxis(Z_AXIS, np.pi/2)).arr
 
-pend1.r = r0
-pend1.p = p0
+# pend1.r = r0
+# pend1.p = p0
 
-pend2.r = L*Y_AXIS - (L/2)*Z_AXIS
+pend2.r = 2*L*Y_AXIS - (L/2)*Z_AXIS
 pend2.p = RotAxis(Y_AXIS, np.pi/2).arr
 
 # Group our constraints together. Don't attach the Euler parameter constraints or the old driving constraint
-# g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx,
-#                    cd_i2, cd_j2, cd_k2, dp1_xx_2, dp1_yx_2])
-g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx])
+g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx,
+                   cd_i2, cd_j2, cd_k2, dp1_xx_2, dp1_yx_2])
+# g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx])
 nc = g_cons.nc
 nb = g_cons.nb
 
