@@ -15,7 +15,7 @@ h = 1e-3                                # [s] - time step size
 t_end = 10                              # [s] - simulation end time
 w = 0.05                                # [m] - side length of bar
 ρ = 7800                                # [kg/m^3] - density of the bar
-g_acc = np.array([[0], [0], [-9.81]])   # [m/s^2] - gravity (global frame)
+g_acc = -9.81 * Z_AXIS                  # [m/s^2] - gravity (global frame)
 
 # Read from file, set up bodies + constraints
 (file_bodies, constraints) = ReadModelFile('revJoint.mdl')
@@ -26,7 +26,7 @@ pend1 = bodies[0]
 pend2 = bodies[1]
 ground = Body({}, True)
 
-# bodies = [bodies[0]]
+bodies = [bodies[0]]
 
 # Derived constants
 pend1.V = 2*L * w**2                        # [m^3] - first bar volume
@@ -94,16 +94,16 @@ r0 = np.array([[0], [L * np.sin(θ0)], [L * np.cos(θ0)]])
 pend1.r = L * Y_AXIS
 pend1.p = (RotAxis(Y_AXIS, np.pi/2) * RotAxis(Z_AXIS, np.pi/2)).arr
 
-# pend1.r = r0
-# pend1.p = p0
+pend1.r = r0
+pend1.p = p0
 
-pend2.r = L*Y_AXIS + -(L/2)*Z_AXIS
+pend2.r = L*Y_AXIS - (L/2)*Z_AXIS
 pend2.p = RotAxis(Y_AXIS, np.pi/2).arr
 
 # Group our constraints together. Don't attach the Euler parameter constraints or the old driving constraint
-g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx,
-                   cd_i2, cd_j2, cd_k2, dp1_xx_2, dp1_yx_2])
-# g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx])
+# g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx,
+#                    cd_i2, cd_j2, cd_k2, dp1_xx_2, dp1_yx_2])
+g_cons = ConGroup([cd_i, cd_j, cd_k, dp1_xx, dp1_yx])
 nc = g_cons.nc
 nb = g_cons.nb
 
@@ -116,6 +116,10 @@ nu = g_cons.GetNu(t_start)  # Darn, ν looks like v in my font
 
 t_steps = int(t_end/h)
 t_grid = np.linspace(t_start, t_end, t_steps, endpoint=True)
+
+O_pos = [np.zeros((t_steps, 3)) for _ in bodies]
+O_vel = [np.zeros((t_steps, 3)) for _ in bodies]
+O_acc = [np.zeros((t_steps, 3)) for _ in bodies]
 
 vel_con_norm = np.zeros((t_steps, 1))
 omega = [np.zeros((t_steps, 3)) for body in bodies]
@@ -221,8 +225,8 @@ for i, t in enumerate(t_grid):
             body.ddr = ddr[j]
             body.ddp = ddp[j]
 
-        print('i: ' + str(i) + ', k: ' + str(k) +
-              ', norm: ' + str(np.linalg.norm(Δz)))
+        # print('i: ' + str(i) + ', k: ' + str(k) +
+        #       ', norm: ' + str(np.linalg.norm(Δz)))
 
         if np.linalg.norm(Δz) < tol:
             break
@@ -246,7 +250,16 @@ for i, t in enumerate(t_grid):
     # I think this might be in the wrong frame
     for j, body in enumerate(bodies):
         omega[j][i, :] = (2*body.G() @ body.dp).T
+
+        O_pos[j][i, :] = body.r.T
+        O_vel[j][i, :] = body.dr.T
+        O_acc[j][i, :] = body.ddr.T
 profiler.disable()
+
+for i, _ in enumerate(bodies):
+    O_pos[i][0, :] = O_pos[i][1, :]
+    O_vel[i][0, :] = O_vel[i][1, :]
+    O_acc[i][0, :] = O_acc[i][1, :]
 
 
 def PrintProfiling(profiler):
@@ -291,5 +304,6 @@ def PlotKinematicsAnalysis(grid, position, velocity, acceleration):
 
 print('Avg. Iterations: ' + str(np.mean(num_iters)))
 
-PrintProfiling(profiler)
-PlotKinematicsAnalysis(t_grid, O_pos, O_vel, O_acc)
+# PrintProfiling(profiler)
+PlotKinematicsAnalysis(t_grid, O_pos[0], O_vel[0], O_acc[0])
+PlotKinematicsAnalysis(t_grid, O_pos[1], O_vel[1], O_acc[1])
